@@ -38,8 +38,8 @@ instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
 # -------------------- directory setup --------------------
 """Make your life easier with this section. I think the only common path segment we all have is the h5_dir, but the
 rest will be completely different depending on how you organize yourself."""
-python_dir = '/home/aschauer/python/pybob/'
-project_dir = f"/home/aschauer/projects/{instrument['name'].lower()}/"
+python_dir = '/path/to/your/python/'
+project_dir = f"/path/to/your/stuff/{instrument['name'].lower()}/"
 run_dir = os.path.join(project_dir, 'runs/')
 
 
