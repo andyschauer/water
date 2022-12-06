@@ -5,21 +5,14 @@ Hierarchical Data Format) contain data at about 1 Hz frequency. This script simp
 range of h5 files, allows the user to trim the ends and then saves the dataset as a new hdf5 file. While
 this script was written with Picarro's water isotope instruments in mind, in principle, it should work for
 any Picarro CRDS instrument.
-<<<<<<< HEAD
 
 Last updated: 2022-12-05
-=======
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 """
 
 __author__ = "Andy Schauer"
 __copyright__ = "Copyright 2022, Andy Schauer"
 __license__ = "Apache 2.0"
-<<<<<<< HEAD
 __version__ = "1.1"
-=======
-__version__ = "1.0"
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 __email__ = "aschauer@uw.edu"
 
 
@@ -30,11 +23,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as pplt
 import os
-<<<<<<< HEAD
 from picarro_lib import *
-=======
-import re
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 import time as t
 
 
@@ -50,19 +39,6 @@ def fig_on_key(event):
         print(f'stop chosen as {stop}')
 
 
-<<<<<<< HEAD
-=======
-def make_h5_file_list(directory):
-    """Create and return a list of files contained within a directory."""
-    filelist = []
-    initial_list = os.listdir(directory)
-    for file in initial_list:
-        if re.search('h5', file):
-            filelist.append(file)
-    return filelist
-
-
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 # -------------------- parse the three optional arguments --------------------
 """These arguments will be obtained either by passing them while calling the present script
 or by adding them as arguments."""
@@ -80,100 +56,22 @@ stop_date = args.stopdate
 
 # -------------------- get instrument information --------------------
 """ Get specific picarro instrument whose data is being processed as well as some associated information. Populate
-<<<<<<< HEAD
 this function with your own instrument(s). The function get_instrument() is located in picarro_lib.py."""
 instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
-=======
-this function with your own instrument(s)."""
-
-instrument_list = 'abel, desoto, mildred, phoenix'
-name_recognized = False
-
-while name_recognized is False:
-    if (instrument_name is None) or (instrument_name not in instrument_list):
-        entered_name = input(f"\nEnter the name of the instrument ({instrument_list}): ")
-    else:
-        entered_name = instrument_name
-
-    if entered_name == 'abel':
-        instrument = {
-            'name': 'Abel',
-            'model': 'L2130i',
-            'O17_flag': False}
-        print(' ')
-        print(' ** Using placeholder isotopic reference values that need to be updated to this specific instrument. **')
-        print(' ')
-        t.sleep(0.5)
-        rDH_ref = 0.1509
-        r1816_ref = 1.6954
-        r1716_ref = 0.5854
-        r1816b_ref = 0.9623
-
-        name_recognized = True
-
-    elif entered_name == 'desoto':
-        instrument = {
-            'name': 'DeSoto',
-            'model': 'L2120i',
-            'O17_flag': False}
-        name_recognized = True
-
-    elif entered_name == 'mildred':
-        instrument = {
-            'name': 'Mildred',
-            'model': 'L2140i',
-            'O17_flag': True}
-        print(' ')
-        print(' ** Using placeholder isotopic reference values that need to be updated to this specific instrument. **')
-        print(' ')
-        t.sleep(0.5)
-        rDH_ref = 0.1509
-        r1816_ref = 1.6954
-        r1716_ref = 0.5854
-        r1816b_ref = 0.9623
-
-        name_recognized = True
-
-    elif entered_name == 'phoenix':
-        instrument = {
-            'name': 'Phoenix',
-            'model': 'L2140i',
-            'O17_flag': True}
-
-        rDH_ref = 0.1509
-        r1816_ref = 1.6954
-        r1716_ref = 0.5854
-        r1816b_ref = 0.9623
-
-        name_recognized = True
-
-    else:
-        print('\nInstrument not recognized.')
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 
 
 # -------------------- directory setup --------------------
 """Make your life easier with this section. I think the only common path segment we all have is the h5_dir, but the
-<<<<<<< HEAD
 rest will be completely different depending on how you organize yourself. The easiest directory structure in terms
 of how things are currently organized is to have your instrument name as a folder. Within that folder, create an h5
 directory and a runs directory."""
-project_dir = f"S:/Data/projects/{instrument['name'].lower()}/"
-=======
-rest will be completely different depending on how you organize yourself. I have assumed the simplest, but not my
-preferred, approach which is to have the present script in a project directory that also has "runs" and "h5"
-directories. I am also assuming you will comment out or remove the current "project_dir" line in favor of
-a hard-coded line like the example shown below it."""
-project_dir = os.getcwd()
-# project_dir = f"/path/to/your/project/"
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
+project_dir = f"/path/to/your/stuff/{instrument['name'].lower()}/"
 run_dir = os.path.join(project_dir, 'runs/')
 h5_dir = os.path.join(project_dir, 'h5/Picarro/G2000/Log/DataLogger/DataLog_Private/')
 
 
 # -------------------- make h5 file list --------------------
 """This is a list of all h5 files that exist for the instrument of interest."""
-<<<<<<< HEAD
 all_h5_file_list = make_file_list(h5_dir, '.h5')
 all_h5_file_list.sort()
 
@@ -217,35 +115,6 @@ while stop_date_found is False:
 
 
 # -------------------- make file list based on those start and stop dates --------------------
-=======
-all_h5_file_list = make_h5_file_list(h5_dir)
-all_h5_file_list.sort()
-
-
-# -------------------- ask user for start and stop dates --------------------
-if start_date is None:
-    start_date = input(f"Enter the start date as yyyymmdd (leave empty for oldest file {all_h5_file_list[0]}): ")
-
-if stop_date is None:
-    stop_date = input(f"Enter the stop date as yyyymmdd (leave empty for most recent file {all_h5_file_list[-1]}): ")
-
-start_time = t.time()
-
-
-# -------------------- make file list based on those start and stop dates --------------------
-if start_date == '':
-    start_date_index = None
-else:
-    start_date_list = [i for i in all_h5_file_list if start_date in i]
-    start_date_index = all_h5_file_list.index(start_date_list[0])
-
-if stop_date == '':
-    stop_date_index = None
-else:
-    stop_date_list = [i for i in all_h5_file_list if str(int(stop_date) + 1) in i]
-    stop_date_index = all_h5_file_list.index(stop_date_list[0])
-
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 file_list = all_h5_file_list[start_date_index:stop_date_index]
 
 
@@ -277,11 +146,6 @@ for file in file_list:
         print(f"{file}    =>    {len(h5_data.dtype)} data fields.    ** Can't import different sized files. Super sorry. ** ")
         t.sleep(0.1)
 
-<<<<<<< HEAD
-=======
-print("--- %s seconds ---" % (t.time() - start_time))
-
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 
 # -------------------- Choose the exact start and stop data points by using the figures --------------------
 data_index = [i for i in range(0, len(data['H2O']))]
@@ -318,17 +182,6 @@ for header in headers:
     to replicate Picarro's delta calculations and then makes sure these new delta values
     make their way into the data set for hdf5 export.
 
-<<<<<<< HEAD
-=======
-    Reference Values - The below "_ref" values are user defined reference values based
-    on empirical data. These values use Kona Deep drinking water standard (KD) from
-    Phoenix (the prototype and original L2140i) picarro_vial_calibrate.py, using KD
-    data, calculate ratio values using strength offset data as below under "Raw delta
-    calculations". Values are to four decimal places because 2 sigma was <0.0002. I
-    chose KD because of its similarity with VSMOW. I chose calibrated vial level
-    data because this is an effort to make delta values as close to reality as possible.
-
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
     Raw delta calculations - John Hoffnagle's calculation - based on strengths and uses laser 2 minor
     masses and laser 1 major mass. The _offset values have been corrected
     for water vapor concentration (e.g. str3_offset). The non offset values
@@ -337,52 +190,22 @@ for header in headers:
 if instrument['O17_flag']:
     hdf5_additions = ['rDH', 'dD', 'r1816', 'd18O', 'r1716', 'd17O', 'r1816b', 'd18Ob']
 
-<<<<<<< HEAD
-=======
-    if 'rDH_ref' not in globals():  # if reference values are not defined above, then here are some place holders
-        rDH_ref = 0.1509
-        r1816_ref = 1.6954
-        r1716_ref = 0.5854
-        r1816b_ref = 0.9623
-
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
     rDH = str3_offset / str2_offset
     r1816 = str1_offset / str2_offset
     r1716 = str13_offset / str2_offset
     r1816b = str11_offset / str2_offset
 
-<<<<<<< HEAD
     d17O = (r1716 / ref_ratios['r1716'] - 1) * 1000
     d18Ob = (r1816b / ref_ratios['r1816b'] - 1) * 1000
-=======
-    dD = (rDH / rDH_ref - 1) * 1000
-    d18O = (r1816 / r1816_ref - 1) * 1000
-    d17O = (r1716 / r1716_ref - 1) * 1000
-    d18Ob = (r1816b / r1816b_ref - 1) * 1000
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 
 else:
     hdf5_additions = ['rDH', 'dD', 'r1816', 'd18O']
 
-<<<<<<< HEAD
     rDH = peak3_offset / peak2_offset
     r1816 = peak1_offset / peak2_offset
 
 dD = (rDH / ref_ratios['rDH'] - 1) * 1000
 d18O = (r1816 / ref_ratios['r1816'] - 1) * 1000
-=======
-    """Reference values are from Abel (an L2130i) 20220901 calibrated vial level data using KD."""
-
-    if 'rDH_ref' not in globals():  # if reference values are not defined above, then here are some place holders
-        rDH_ref = 0.1744  # np.mean(vial['peak3_offset']['mean'][kd['index']]/vial['peak2_offset']['mean'][kd['index']])
-        r1816_ref = 1.7540  # np.mean(vial['peak1_offset']['mean'][kd['index']]/vial['peak2_offset']['mean'][kd['index']])
-
-    rDH = peak3_offset / peak2_offset
-    r1816 = peak1_offset / peak2_offset
-
-    dD = (rDH / rDH_ref - 1) * 1000
-    d18O = (r1816 / r1816_ref - 1) * 1000
->>>>>>> aa37cf7e37ff00a449181821196926a2ec4d4fd3
 
 headers = headers + hdf5_additions
 
