@@ -13,6 +13,18 @@ __email__ = "aschauer@uw.edu"
 # -------------------- imports --------------------
 import os
 import re
+import time as t
+
+
+# -------------------- functions --------------------
+def get_path(desired_path):
+    """Make your life easier with this section. These are the paths that seem to change depending on the computer we are working on."""
+    if desired_path == "project":
+        return "/path/to/your/project/"
+    elif desired_path == "python":
+        return "/path/to/your/python_scripts/"
+    elif desired_path == "standards":
+        return "/path/to/your/standards/reference_materials.json"
 
 
 def get_instrument():
@@ -96,7 +108,7 @@ def get_instrument():
         else:
             print('\nInstrument not recognized.')
 
-        if 'ref' not in locals():
+        if 'ref_ratios' not in locals():
             ref_ratios = {
                 'rDH': 0.1500,
                 'r1816': 1.7000,
@@ -180,3 +192,9 @@ def read_file(file_to_import, delim=None, header_row=1):
                 data[h].append(v)
 
     return headers, data
+
+
+# -------------------- python scripts --------------------
+python_dir = get_path("python")
+python_scripts = {'picarro_lib.py': '', 'picarro_h5.py': '', 'picarro_inj.py': '', 'picarro_vial.py': ""}
+python_scripts = {key: (t.strftime('%Y-%m-%d %H:%M:%S', t.localtime(os.path.getmtime(f'{python_dir}{key}')))) for key, value in python_scripts.items()}

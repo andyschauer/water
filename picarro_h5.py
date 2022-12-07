@@ -5,8 +5,6 @@ Hierarchical Data Format) contain data at about 1 Hz frequency. This script simp
 range of h5 files, allows the user to trim the ends and then saves the dataset as a new hdf5 file. While
 this script was written with Picarro's water isotope instruments in mind, in principle, it should work for
 any Picarro CRDS instrument.
-
-Last updated: 2022-12-05
 """
 
 __author__ = "Andy Schauer"
@@ -60,12 +58,8 @@ this function with your own instrument(s). The function get_instrument() is loca
 instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
 
 
-# -------------------- directory setup --------------------
-"""Make your life easier with this section. I think the only common path segment we all have is the h5_dir, but the
-rest will be completely different depending on how you organize yourself. The easiest directory structure in terms
-of how things are currently organized is to have your instrument name as a folder. Within that folder, create an h5
-directory and a runs directory."""
-project_dir = f"/path/to/your/stuff/{instrument['name'].lower()}/"
+# -------------------- paths --------------------
+project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
 run_dir = os.path.join(project_dir, 'runs/')
 h5_dir = os.path.join(project_dir, 'h5/Picarro/G2000/Log/DataLogger/DataLog_Private/')
 

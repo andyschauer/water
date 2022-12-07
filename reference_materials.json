@@ -1,0 +1,334 @@
+{
+    "water": {
+
+        "vsmow": {
+            "name": "VSMOW",
+            "dD": 0,
+            "d18O": 0,
+            "D17O": 0,
+            "R18": 0.0020052,
+            "R17": 0.0003799,
+            "notes": ""
+        },
+
+        "gisp": {
+            "name": "GISP",
+            "dD": -189.73,
+            "d18O": -24.78,
+            "D17O": 25,
+            "notes": "CIAAW values for GISP are dD=-189.73 and d18O=-24.78 (Gonfiantini et al., 1995), 17Oxs from ReferenceWaters.csv on 170104"
+        },
+
+        "slap": {
+            "name": "SLAP",
+            "dD": -428,
+            "d18O": -55.5,
+            "D17O": 0,
+            "notes": "d17Oacc defined such that 17Oxs = 0, (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "usgs_pr": {
+            "name": "usgs_pr",
+            "dD": -1.3,
+            "d18O": -1.52,
+            "D17O": null,
+            "notes": "dD and d18O from ampules"
+        },
+
+        "usgs_a1": {
+            "name": "usgs_a1",
+            "dD": -395,
+            "d18O": -50.02,
+            "D17O": null,
+            "notes": "dD and d18O from ampules"
+        },
+
+        "usgs45": {
+            "name": "usgs45",
+            "dD": -10.3,
+            "d18O": -2.238,
+            "D17O": 12,
+            "notes": "dD and d18O from USGS, 17Oxs is from Berman et al. 2013"
+        },
+
+        "rw": {
+            "name": "RW",
+            "dD": -18.52,
+            "d18O": 5.15,
+            "D17O": null,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv"
+        },
+
+        "kd": {
+            "name": "kd",
+            "dD": 0.65,
+            "d18O": 0.00,
+            "D17O": -3,
+            "notes": "Kona Deep drinking water, accepted values from 20150213T132436_ReferenceWaters_ReducedFile.csv, updated 17Oxs on 170104"
+        },
+
+        "pw": {
+            "name": "pw",
+            "dD": -42.12,
+            "d18O": -6.88,
+            "D17O": 30,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "sw": {
+            "name": "SW",
+            "dD": -75.63,
+            "d18O": -10.55,
+            "D17O": 33,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "sw2": {
+            "name": "SW2",
+            "dD": -77.96,
+            "d18O": -10.85,
+            "D17O": 33,
+            "notes": "values from 190723 Desoto june runs and 17Oxs from SW"
+        },
+
+        "bw": {
+            "name": "BW",
+            "dD": -156.87,
+            "d18O": -20.01,
+            "D17O": 13,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, D17O from referencewaters.m run on 160816, updated 17Oxs on 170104"
+        },
+
+        "aw": {
+            "name": "AW",
+            "dD": -231.54,
+            "d18O": -29.79,
+            "D17O": null,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv"
+        }, 
+
+        "ww": {
+            "name": "WW",
+            "dD": -268.30,
+            "d18O": -33.82,
+            "D17O": 25,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000), updated 17Oxs on 170104"
+        },
+
+        "cw": {
+            "name": "CW",
+            "dD": -265.95,
+            "d18O": -33.64,
+            "D17O": 25,
+            "notes": "Colorado Water is WDC06A from NICL 2010ish, dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv"
+        },
+
+        "tdw": {
+            "name": "TDW",
+            "dD": -309.49,
+            "d18O": -38.76,
+            "D17O": null,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv"
+        },
+
+        "wgw": {
+            "name": "WGW",
+            "dD": -318.82,
+            "d18O": -39.77,
+            "D17O": 14,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "svw": {
+            "name": "SVW",
+            "dD": -316.59,
+            "d18O": -41.13,
+            "D17O": null,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv"
+        },
+
+        "sps": {
+            "name": "SPS",
+            "dD": -365.01,
+            "d18O": -46.96,
+            "D17O": 15,
+            "notes": "values from 170718_EricMeeting.mat"
+        },
+
+        "sps2": {
+            "name": "SPS2",
+            "dD": -365.20,
+            "d18O": -47.07,
+            "D17O": 15,
+            "notes": "values from 190723 Desoto June runs, 17Oxs from SPS"
+        },
+
+        "spg": {
+            "name": "SPG",
+            "dD": -435.31,
+            "d18O": -55.39,
+            "D17O": -11,
+            "notes": "values from 170718_EricMeeting.mat"
+        },
+
+        "vw": {
+            "name": "VW",
+            "dD": -439.24,
+            "d18O": -56.61,
+            "D17O": 0,
+            "notes": "dD is from 20150114T095434_ReferenceWaters_ReducedFile.csv and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000), updated 170104"
+        },
+
+        "barkan": {
+            "name": "Barkan",
+            "dD": -23.99,
+            "d18O": -5.44,
+            "D17O": 28,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, Barkan & Luz spreadsheet of their 17O excess internal stds (aka Kinneret), d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "ross5": {
+            "name": "Ross5",
+            "dD": -142.88,
+            "d18O": -18.50,
+            "D17O": 31,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, Landais water std, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "d57": {
+            "name": "D57",
+            "dD": -254.46,
+            "d18O": -32.32,
+            "D17O": 19,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "talos": {
+            "name": "TALOS",
+            "dD": -310.88,
+            "d18O": -40.01,
+            "D17O": -49,
+            "notes": "dD and d18O from 20130401T082738_ReferenceWaters_ReducedFile_ACCEPTED_VALUES.csv, 20130331T115723_Water17OReducedFile_ACCEPTED_VALUES.xlsx, d17Oacc = (D17O*10**-6+0.528*math.log(d18Oacc/1000+1))-1)*1000)"
+        },
+
+        "ibw": {
+            "name": "IBW",
+            "dD": -111.8,
+            "d18O": -14.19,
+            "D17O": null,
+            "notes": "accepted values from INSTAAR"
+        },
+
+        "igw": {
+            "name": "IGW",
+            "dD": -298.73,
+            "d18O": -38.09,
+            "D17O": null,
+            "notes": "accepted values from INSTAAR"
+        },
+
+        "iaw": {
+            "name": "IAW",
+            "dD": -239.25,
+            "d18O": -30.35,
+            "D17O": null,
+            "notes": "accepted values from INSTAAR"
+        },
+
+        "ipw": {
+            "name": "IPW",
+            "dD": -355.63,
+            "d18O": -45.43,
+            "D17O": null,
+            "notes": "accepted values from INSTAAR"
+        },
+
+        "kbw": {
+            "name": "KBW",
+            "dD": -111.65,
+            "d18O": -14.15,
+            "D17O": 27,
+            "notes": "d18O is from INSTAAR 2016 calibration, 17O values are from water fluorinations 180202 to 180329 and while on the VSMOWSLAP scale, they were measured directly against SW and VW, see S:\\Data\\projects\\Water_17O_IRMS\\final\\20180504T122610_Water17OReducedFile_Summary.xlsx"
+        },
+
+        "kgw": {
+            "name": "KGW",
+            "dD": -298.37,
+            "d18O": -38.02,
+            "D17O": 15,
+            "notes": "d18O is from INSTAAR 2016 calibration, 17O values are from water fluorinations 180202 to 180329 and while on the VSMOWSLAP scale, they were measured directly against SW and VW, see S:\\Data\\projects\\Water_17O_IRMS\\final\\20180504T122610_Water17OReducedFile_Summary.xlsx"
+        },
+
+        "kpw": {
+            "name": "KPW",
+            "dD": -355.18,
+            "d18O": -45.41,
+            "D17O": 4,
+            "notes": "updated on 170718"
+        },
+
+        "kaw": {
+            "name": "KAW",
+            "dD": -239.13,
+            "d18O": -30.30,
+            "D17O": 26,
+            "notes": "updated on 170718"
+        },
+
+        "vw1f": {
+            "name": "VW1F",
+            "dD": -438.43,
+            "d18O": -56.59,
+            "D17O": -6,
+            "notes": "INSTAAR Vostok water"
+        },
+
+        "cph_22": {
+            "name": "CPH_22",
+            "dD": -168.45,
+            "d18O": -21.88,
+            "D17O": null,
+            "notes": "accepted values from Vasileios email to andy 3/18/2015"
+        },
+
+        "cph_neem": {
+            "name": "CPH_NEEM",
+            "dD": -257.45,
+            "d18O": -33.5,
+            "D17O": null,
+            "notes": "accepted values from Vasileios email to andy 3/18/2015"
+        },
+
+        "cph_40": {
+            "name": "CPH_40",
+            "dD": -311.11,
+            "d18O": -39.98,
+            "D17O": null,
+            "notes": "accepted values from Vasileios email to andy 3/18/2015"
+        },
+
+        "cph_dc02": {
+            "name": "CPH_DC02",
+            "dD": -429.53,
+            "d18O": -54.25,
+            "D17O": null,
+            "notes": "accepted values from Vasileios email to andy 3/18/2015"
+        },
+
+        "df": {
+            "name": "DF",
+            "dD": null,
+            "d18O": -55.744,
+            "D17O": -6,
+            "notes": "accepted values from VSMOW-SLAP corrected Schoenemann et al 2014"
+        },
+
+        "ciw": {
+            "name": "CIW",
+            "dD": -41.66,
+            "d18O": -6.83,
+            "D17O": null,
+            "notes": "dD and d18O from two runs on DeSoto 160904 and 160911"
+        }
+    }
+}

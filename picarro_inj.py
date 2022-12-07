@@ -35,17 +35,10 @@ this function with your own instrument(s). The function get_instrument() is loca
 instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
 
 
-# -------------------- directory setup --------------------
-"""Make your life easier with this section. I think the only common path segment we all have is the h5_dir, but the
-rest will be completely different depending on how you organize yourself."""
-python_dir = '/path/to/your/python/'
-project_dir = f"/path/to/your/stuff/{instrument['name'].lower()}/"
+# -------------------- paths --------------------
+python_dir = get_path("python")
+project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
 run_dir = os.path.join(project_dir, 'runs/')
-
-
-# -------------------- python scripts --------------------
-python_scripts = {'picarro_lib.py': '', 'picarro_h5.py': '', 'picarro_inj.py': '', 'picarro_vial_calibrate.py': ""}
-python_scripts = {key: (t.strftime('%Y-%m-%d %H:%M:%S', t.localtime(os.path.getmtime(f'{python_dir}{key}')))) for key, value in python_scripts.items()}
 
 
 # -------------------- identify run --------------------
