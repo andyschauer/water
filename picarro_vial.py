@@ -45,7 +45,7 @@ def fig_in_html(fhp, figname, caption):
 
 
 # -------------------- CONSTANTS --------------------
-FIRST_INJECTIONS_TO_IGNORE = 4
+FIRST_INJECTIONS_TO_IGNORE = 5
 
 
 # -------------------- get instrument information --------------------
@@ -57,7 +57,6 @@ instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
 # -------------------- paths --------------------
 python_dir = get_path("python")
 project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
-report_dir = 'report/'
 fig_dir = 'figures/'
 
 run_or_set = input("\nDo you want to look at a single run or a set of runs? (type 'run' or 'set'): ")
@@ -81,6 +80,7 @@ while identified_run == 0:
         run = run_list[np.where(isdir)[0][0]]
         run_dir += f'{run}/'
         print(f'    Processing run {run}...')
+        report_dir = f"{run_dir}report/"
     else:
         print('\n** More than one run / set found. **\n')
 
@@ -402,11 +402,20 @@ else:
     salient_vial_data_list = ['inj_file', 'id1', 'time', 'vial_num', 'set_vial_num', 'h2o', 'h2o_std', 'dD_vsmow', 'dD_std', 'd18O_vsmow', 'd18O_std', 'dxs_vsmow', 'n_inj', 'flag', 'notes']
 
 
+# -------------------- Get ready to make report -------------------
+# copy report files
+if os.path.exists(report_dir):
+    shutil.rmtree(report_dir)
+shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
+shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
+[shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
+
+
 # -------------------- Figures --------------------
 print('    Making figures...')
 # remove old figures
-figlist = make_file_list(os.path.join(project_dir, report_dir, fig_dir), 'png')
-[os.remove(os.path.join(project_dir, report_dir, fig_dir, fig)) for fig in figlist]
+figlist = make_file_list(os.path.join(report_dir, fig_dir), 'png')
+[os.remove(os.path.join(report_dir, fig_dir, fig)) for fig in figlist]
 
 # make new figures
 fig_num = 0
@@ -428,7 +437,7 @@ ax.set_ylabel('H2O (ppmv)')
 handles, labels = ax.get_legend_handles_labels()
 handles = [h[0] for h in handles]
 ax.legend(handles, labels, numpoints=1, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+pplt.savefig(os.path.join(report_dir, fig_dir, figname))
 pplt.close()
 caption = f'''H2O concentration in ppmv versus vial number. Mean of included injections for each vial and one standard deviation are plotted. This may show poor injections within a vial that were not culled by injection quality control tests.'''
 captions.append(f'Figure {fig_num}. {caption}')
@@ -451,7 +460,7 @@ for j in range(len(ref_wat['id1_set'])):
 ax.set_xlabel('Vial number')
 ax.set_ylabel('dD residual (permil)')
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+pplt.savefig(os.path.join(report_dir, fig_dir, figname))
 pplt.close()
 caption = f'''dD residual in permil versus vial number. Residual is the individual vial mean subtracted from the mean of all vials within a reference water type. This helps identify drift across the entire run or set of runs.'''
 captions.append(f'Figure {fig_num}. {caption}')
@@ -475,7 +484,7 @@ if instrument['O17_flag']:
     ax.set_xlabel('Vial number')
     ax.set_ylabel('d17O residual (permil)')
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-    pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+    pplt.savefig(os.path.join(report_dir, fig_dir, figname))
     pplt.close()
     caption = f'''d17O residual in permil versus vial number. Residual is the individual vial mean subtracted from the mean of all vials within a reference water type. This helps identify drift across the entire run or set of runs.'''
     captions.append(f'Figure {fig_num}. {caption}')
@@ -498,7 +507,7 @@ for j in range(len(ref_wat['id1_set'])):
 ax.set_xlabel('Vial number')
 ax.set_ylabel('d18O residual (permil)')
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+pplt.savefig(os.path.join(report_dir, fig_dir, figname))
 pplt.close()
 caption = f'''d18O residual in permil versus vial number. Residual is the individual
               vial mean subtracted from the mean of all vials within a reference water type. This helps
@@ -522,7 +531,7 @@ for j in range(len(ref_wat['id1_set'])):
 ax.set_xlabel('d18O vs VSMOW (permil)')
 ax.set_ylabel('dD vs VSMOW (permil)')
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+pplt.savefig(os.path.join(report_dir, fig_dir, figname))
 pplt.close()
 caption = f'''dD vs d18O. The slope of all {dD_v_d18_fit_str} in this plot is {str(np.round(dD_v_d18_fit[0], 1))}.'''
 captions.append(f'Figure {fig_num}. {caption}')
@@ -542,21 +551,21 @@ if instrument['O17_flag']:
     ax.set_xlabel('d18Oprime vs VSMOW')
     ax.set_ylabel('d17Oprime vs VSMOW')
     ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
-    pplt.savefig(os.path.join(project_dir, report_dir, fig_dir, figname))
+    pplt.savefig(os.path.join(report_dir, fig_dir, figname))
     pplt.close()
     caption = f'''d17Oprime vs d18Oprime. The slope of all {d17_v_d18_fit_str} in this plot is {str(np.round(d17_v_d18_fit[0], 4))}.'''
     captions.append(f'Figure {fig_num}. {caption}')
     thumbcaption = 'd17O vs d18O'
     thumbcaptions.append(thumbcaption)
 
-figlist = make_file_list(os.path.join(project_dir, report_dir, fig_dir), 'png')
+figlist = make_file_list(os.path.join(report_dir, fig_dir), 'png')
 figlist = natsorted(figlist)
 
 
 # -------------------- export summary data file --------------------
 print(f'\n    Creating summary data file.')
 summary_data_filename = f"{instrument['name'].lower()}_summary_data.csv"
-summary_data_file = os.path.join(project_dir, report_dir, 'data/', summary_data_filename)
+summary_data_file = os.path.join(report_dir, 'data/', summary_data_filename)
 
 summary_file_headers = salient_vial_data_list
 data_to_write = str([f'{i}[ii]' for i in salient_vial_data_list]).replace("'", '')
@@ -574,13 +583,6 @@ with open(summary_data_file, 'w', newline='') as csvfile:
 
 
 # -------------------- make html summary report --------------------
-# copy report files
-if os.path.exists(os.path.join(run_dir, report_dir)):
-    shutil.rmtree(os.path.join(run_dir, report_dir))
-shutil.copytree(os.path.join(python_dir, report_dir), os.path.join(run_dir, report_dir))
-shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), os.path.join(project_dir, report_dir))
-[shutil.copy2(os.path.join(python_dir, script), os.path.join(project_dir, report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
-
 ref_wat_block_str_1 = str([f"""<tr>
                              <td>{i}</td>
                              <td>{eval(i.lower())['dD']}</td>
@@ -617,7 +619,7 @@ if instrument['O17_flag']:
 else:
     data_quality_block = data_quality_block_str_1
 
-log_summary_page = os.path.join(project_dir, report_dir, 'report.html')
+log_summary_page = os.path.join(report_dir, 'report.html')
 fhp = open(log_summary_page, 'w')
 header = f"""
     <!DOCTYPE html>
@@ -769,5 +771,5 @@ webbrowser.open(log_summary_page)
 
 
 # -------------------- make zip of summary report --------------------
-shutil.make_archive('report', 'zip', os.path.join(project_dir, report_dir))
-shutil.move('report.zip', os.path.join(project_dir, report_dir, 'report.zip'))
+shutil.make_archive('report', 'zip', os.path.join(report_dir))
+shutil.move('report.zip', os.path.join(report_dir, 'report.zip'))
