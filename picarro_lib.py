@@ -4,9 +4,10 @@ Library of functions used by the IsoLab picarro_* suite of python scripts.
 """
 
 __author__ = "Andy Schauer"
-__copyright__ = "Copyright 2022, Andy Schauer"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.1"
+__version__ = "1.2"
 __email__ = "aschauer@uw.edu"
 
 
@@ -20,11 +21,11 @@ import time as t
 def get_path(desired_path):
     """Make your life easier with this section. These are the paths that seem to change depending on the computer we are working on."""
     if desired_path == "project":
-        return "/path/to/your/project/"
+        return "S:/Data/projects/"
     elif desired_path == "python":
-        return "/path/to/your/python_scripts/"
+        return "S:/Data/python/"
     elif desired_path == "standards":
-        return "/path/to/your/standards/reference_materials.json"
+        return "S:/Data/ReferenceMaterials/reference_materials.json"
 
 
 def get_instrument():
@@ -96,7 +97,7 @@ def get_instrument():
                 'trim_from_start': 35,
                 'trim_from_end': 50}
             inj_quality = {
-                'max_H2O_std': 1500,
+                'max_H2O_std': 2000,
                 'max_d18O_std': 1.0,
                 'max_d17O_std': 0.5,
                 'max_dD_std': 2.0}

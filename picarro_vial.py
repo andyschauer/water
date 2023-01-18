@@ -6,9 +6,10 @@ picarro_inj.py were run prior to the present script.
 """
 
 __author__ = "Andy Schauer"
-__copyright__ = "Copyright 2022, Andy Schauer"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.1"
+__version__ = "1.2"
 __email__ = "aschauer@uw.edu"
 
 
@@ -136,15 +137,23 @@ for inj_file in inj_file_list:
     # -------------------- summarize vial level data --------------------
     vial_set = list(set(inj['vial_num']))
     total_vials += len(vial_set)
-
-    for key in inj.keys():
-        if key not in inj_extra_list:
-            vial[key]['mean'] = np.append(vial[key]['mean'], [np.nanmean(eval(key)[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
-            vial[key]['std'] = np.append(vial[key]['std'], [np.nanstd(eval(key)[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
-        elif key == 'vial_num':
-            vial[key] = np.append(vial[key], [np.nanmean(eval(key)[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
-        else:
-            pass
+    vials_without_injections = []
+    
+    for i in vial_set:
+        for key in inj.keys():
+            curr_indices = np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
+            if len(curr_indices) == 0:
+                vials_without_injections.append(i)
+                curr_indices = np.where(vial_num == i)[0]
+            if key == 'vial_num':
+                vial[key] = np.append(vial[key], np.nanmean(eval(key)[curr_indices]))
+            elif key not in inj_extra_list:
+                vial[key]['mean'] = np.append(vial[key]['mean'], np.nanmean(eval(key)[curr_indices]))
+                vial[key]['std'] = np.append(vial[key]['std'], np.nanstd(eval(key)[curr_indices]))
+            else:
+                pass
+    
+    vials_without_injections = list(set(vials_without_injections))
 
     vial['project'] = np.append(vial['project'], project[np.where(inj_num == 1)[0]])
     vial['id1'] = np.append(vial['id1'], id1[np.where(inj_num == 1)[0]])
@@ -172,15 +181,19 @@ vial['notes'] = ['' for i in vial['id1']]
 for i in range(len(vial['id1'])):
     if vial['H2O']['std'][i] > vial_quality['max_H2O_std']:
         # vial['flag'][i] = 0  # commented out because it is usually not justifiable to exclude based on this threshold
-        vial['notes'][i] += f"Vial {i} had high within vial H2O standard deviation (1 sigma = {round(vial['H2O']['std'][i], 0)}; threshold = {vial_quality['max_H2O_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial H2O standard deviation (1 sigma = {round(vial['H2O']['std'][i], 0)}; threshold = {vial_quality['max_H2O_std']})."
 
     if vial['d18O']['std'][i] > vial_quality['max_d18O_std']:
         vial['flag'][i] = 0
-        vial['notes'][i] += f"Vial {i} had high within vial d18O standard deviation (1 sigma = {round(vial['d18O']['std'][i], 3)}; threshold = {vial_quality['max_d18O_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial d18O standard deviation (1 sigma = {round(vial['d18O']['std'][i], 3)}; threshold = {vial_quality['max_d18O_std']})."
 
     if vial['dD']['std'][i] > vial_quality['max_dD_std']:
         vial['flag'][i] = 0
-        vial['notes'][i] += f"Vial {i} had high within vial dD standard deviation (1 sigma = {round(vial['dD']['std'][i], 3)}; threshold = {vial_quality['max_dD_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial dD standard deviation (1 sigma = {round(vial['dD']['std'][i], 3)}; threshold = {vial_quality['max_dD_std']})."
+    
+    if vial['vial_num'][i] in vials_without_injections:
+        vial['flag'][i] = 0
+        vial['notes'][i] += f"Vial {i+1} had no good injections."
 
     if vial['flag'][i] == 0:
         print(f"    {vial['notes'][i]}")

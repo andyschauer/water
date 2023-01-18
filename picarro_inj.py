@@ -7,9 +7,10 @@ and with all of the data fields present that are in the original h5 files.
 """
 
 __author__ = "Andy Schauer"
-__copyright__ = "Copyright 2022, Andy Schauer"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.1"
+__version__ = "1.2"
 __email__ = "aschauer@uw.edu"
 
 
@@ -102,7 +103,7 @@ if 'dD' not in datasets:
 # -------------------- Find individual injections --------------------
 print('\n    Finding injection peaks.')
 
-H2O_THRESHOLD = 3000
+H2O_THRESHOLD = 3000 #3000
 dH2O_dT_threshold = 300
 dH2O_dT2_threshold = 30
 kernel_size = 3

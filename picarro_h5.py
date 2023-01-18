@@ -8,9 +8,10 @@ any Picarro CRDS instrument.
 """
 
 __author__ = "Andy Schauer"
-__copyright__ = "Copyright 2022, Andy Schauer"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.1"
+__version__ = "1.2"
 __email__ = "aschauer@uw.edu"
 
 
