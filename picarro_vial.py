@@ -6,11 +6,12 @@ picarro_inj.py were run prior to the present script.
 """
 
 __author__ = "Andy Schauer"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__email__ = "aschauer@uw.edu"
+__last_modified__ = "2023-02-09"
+__version__ = "1.3"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.2"
-__email__ = "aschauer@uw.edu"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- Imports --------------------
@@ -47,6 +48,7 @@ def fig_in_html(fhp, figname, caption):
 
 # -------------------- CONSTANTS --------------------
 FIRST_INJECTIONS_TO_IGNORE = 5
+DRIFT_CORRECTION = False
 
 
 # -------------------- get instrument information --------------------
@@ -86,6 +88,10 @@ while identified_run == 0:
         print('\n** More than one run / set found. **\n')
 
 inj_file_list = make_file_list(run_dir, 'json')
+for i in inj_file_list:
+    if i == 'peak_detection_settings.json':
+        inj_file_list.remove(i)
+
 if run_or_set == 'run':
     """If we are processing a single run, the reduced the injection json file list to a single file but keep it as a list."""
     if len(inj_file_list) > 1:
@@ -107,7 +113,10 @@ if run_or_set == 'run':
 
 
 # -------------------- Load injection level data from json data file(s) and summarize to vial level data --------------------
-inj_extra_list = ['n_high_res', 'project', 'id1', 'inj_num', 'flag', 'vial_num', 'flag_reason']
+inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope',
+                  'project', 'id1', 'inj_num', 'flag', 'vial_num', 'flag_reason']
+
+
 total_vials = 0
 for inj_file in inj_file_list:
     # read in injections file(s)
@@ -140,16 +149,18 @@ for inj_file in inj_file_list:
     vials_without_injections = []
     
     for i in vial_set:
+        curr_indices = np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
         for key in inj.keys():
-            curr_indices = np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
-            if len(curr_indices) == 0:
-                vials_without_injections.append(i)
-                curr_indices = np.where(vial_num == i)[0]
             if key == 'vial_num':
-                vial[key] = np.append(vial[key], np.nanmean(eval(key)[curr_indices]))
+                vial[key] = np.append(vial[key], i)
             elif key not in inj_extra_list:
-                vial[key]['mean'] = np.append(vial[key]['mean'], np.nanmean(eval(key)[curr_indices]))
-                vial[key]['std'] = np.append(vial[key]['std'], np.nanstd(eval(key)[curr_indices]))
+                if len(curr_indices) == 0:
+                    vials_without_injections.append(i)
+                    vial[key]['mean'] = np.append(vial[key]['mean'], np.nan)
+                    vial[key]['std'] = np.append(vial[key]['std'], np.nan)
+                else:
+                    vial[key]['mean'] = np.append(vial[key]['mean'], np.nanmean(eval(key)[curr_indices]))
+                    vial[key]['std'] = np.append(vial[key]['std'], np.nanstd(eval(key)[curr_indices]))
             else:
                 pass
     
@@ -190,7 +201,7 @@ for i in range(len(vial['id1'])):
     if vial['dD']['std'][i] > vial_quality['max_dD_std']:
         vial['flag'][i] = 0
         vial['notes'][i] += f"Vial {i+1} had high within vial dD standard deviation (1 sigma = {round(vial['dD']['std'][i], 3)}; threshold = {vial_quality['max_dD_std']})."
-    
+
     if vial['vial_num'][i] in vials_without_injections:
         vial['flag'][i] = 0
         vial['notes'][i] += f"Vial {i+1} had no good injections."
@@ -202,7 +213,7 @@ vial['notes'] = np.asarray(vial['notes'])
 
 
 # -------------------- Remove superfluous vial keys and sort based on time --------------------
-remove_from_vial_dict = ['n_high_res', 'inj_num', 'flag_reason']
+remove_from_vial_dict = ['n_high_res', 'inj_num', 'flag_reason', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
 vial_extra_list = ['project', 'id1', 'flag', 'n_inj', 'notes', 'vial_num', 'inj_file', 'set_vial_num', 'total_inj']
 
 for i in remove_from_vial_dict:
@@ -302,18 +313,25 @@ for i in ref_wat['id1_set']:
 
 
 # -------------------- Drift Correction --------------------
-ref_wat['dDresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['dD_resid_raw'], 1)
-vial['dD_drift_corr_factor'] = np.asarray(ref_wat['dDresid_fit'][0] * vial['vial_num'] + ref_wat['dDresid_fit'][1])
-vial['dD_drift_corr'] = np.asarray(vial['dD']['mean'] - vial['dD_drift_corr_factor'])
+if DRIFT_CORRECTION:
+    print(" *** Your data have been drift corrected *** ")
+    ref_wat['dDresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['dD_resid_raw'], 1)
+    vial['dD_drift_corr_factor'] = np.asarray(ref_wat['dDresid_fit'][0] * vial['vial_num'] + ref_wat['dDresid_fit'][1])
+    vial['dD_drift_corr'] = np.asarray(vial['dD']['mean'] - vial['dD_drift_corr_factor'])
 
-if instrument['O17_flag']:
-    ref_wat['d17Oresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['d17O_resid_raw'], 1)
-    vial['d17O_drift_corr_factor'] = np.asarray(ref_wat['d17Oresid_fit'][0] * vial['vial_num'] + ref_wat['d17Oresid_fit'][1])
-    vial['d17O_drift_corr'] = np.asarray(vial['d17O']['mean'] - vial['d17O_drift_corr_factor'])
+    if instrument['O17_flag']:
+        ref_wat['d17Oresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['d17O_resid_raw'], 1)
+        vial['d17O_drift_corr_factor'] = np.asarray(ref_wat['d17Oresid_fit'][0] * vial['vial_num'] + ref_wat['d17Oresid_fit'][1])
+        vial['d17O_drift_corr'] = np.asarray(vial['d17O']['mean'] - vial['d17O_drift_corr_factor'])
 
-ref_wat['d18Oresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['d18O_resid_raw'], 1)
-vial['d18O_drift_corr_factor'] = np.asarray(ref_wat['d18Oresid_fit'][0] * vial['vial_num'] + ref_wat['d18Oresid_fit'][1])
-vial['d18O_drift_corr'] = np.asarray(vial['d18O']['mean'] - vial['d18O_drift_corr_factor'])
+    ref_wat['d18Oresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['d18O_resid_raw'], 1)
+    vial['d18O_drift_corr_factor'] = np.asarray(ref_wat['d18Oresid_fit'][0] * vial['vial_num'] + ref_wat['d18Oresid_fit'][1])
+    vial['d18O_drift_corr'] = np.asarray(vial['d18O']['mean'] - vial['d18O_drift_corr_factor'])
+else:
+    print("No drift Correction was applied.")
+    vial['dD_drift_corr'] = np.asarray(vial['dD']['mean'])
+    vial['d18O_drift_corr'] = np.asarray(vial['d18O']['mean'])
+    vial['d17O_drift_corr'] = np.asarray(vial['d17O']['mean'])
 
 
 # -------------------- Normalize to vsmow-slap --------------------
@@ -418,7 +436,7 @@ else:
 # -------------------- Get ready to make report -------------------
 # copy report files
 if os.path.exists(report_dir):
-    shutil.rmtree(report_dir)
+    shutil.move(report_dir, os.path.join(run_dir, f"report_{int(dt.datetime.utcnow().timestamp())}"))
 shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 [shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
@@ -647,7 +665,7 @@ header = f"""
 
     <div class="created-date">Created - {str(dt.datetime.now())}</div>
 
-    <h2>{instrument['name']} Report - {dt.datetime.utcfromtimestamp(vial['time']['mean'][0]).strftime('%Y-%m-%d')} to {dt.datetime.utcfromtimestamp(vial['time']['mean'][-1]).strftime('%Y-%m-%d')}</h2>
+    <h2>{instrument['name']} Report - {dt.datetime.utcfromtimestamp( inj['time']['mean'][0]).strftime('%Y-%m-%d')} to {dt.datetime.utcfromtimestamp( inj['time']['mean'][-1]).strftime('%Y-%m-%d')}</h2>
 
     <h2>Introduction</h2>
     <div class="text-indent">
