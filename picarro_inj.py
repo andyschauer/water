@@ -4,14 +4,23 @@ This script reads in the hdf5 file created by picarro_h5.py if the data set excl
 This script will find each injection and reduce the h5 level data (~ 1 Hz data) to injection level summaries. A tray
 description file is required. This script effectively creates Picarro's Coordinator output, albeit in json format
 and with all of the data fields present that are in the original h5 files.
+
+Version 1.3 from 2023-02-09 has a peak_detection_settings.json file with dictionary pds to keep track of custom settings related
+to, wait for it, peak detection. It turns out different instruments, injection strategies, injection errors, and other anomolous
+peak shape issues make it very difficult to have a single set of parameters to detect injection peaks. Defaults are here but then
+saved to the above json file for modification if peak detection issues are noted. Then, if that file exists, this script will use
+those settings, not the default hard coded settings.
+
+Other additions include removing unused variables from the inj dictionary, calculation and inclusion of the slope
 """
 
 __author__ = "Andy Schauer"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__email__ = "aschauer@uw.edu"
+__last_modified__ = "2023-02-09"
+__version__ = "1.3"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.2"
-__email__ = "aschauer@uw.edu"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- imports --------------------
@@ -21,12 +30,14 @@ from bokeh.resources import CDN  # , INLINE
 import datetime as dt
 import h5py
 import json
+import matplotlib.pyplot as pplt  # for interactive mode
 from natsort import natsorted
 import numpy as np
 import os
 from picarro_lib import *
 import shutil
 import time as t
+import warnings
 import webbrowser
 
 
@@ -71,7 +82,7 @@ if len(hdf5_list) > 1:
         if len(np.where(isfile)[0]) == 1:
             identified_file = 1
             hdf5_file = hdf5_list[np.where(isfile)[0][0]]
-            print(f'    Processing file {hdf5_file}...')
+            print(f'\n    Processing file {hdf5_file}...')
         else:
             print('\n** More than one file found. **\n')
 else:
@@ -87,10 +98,16 @@ with h5py.File(f'{run_dir}{hdf5_file}', 'r') as hf:
         globals()[data] = np.asarray(hf[data])
 
 
-# -------------------- Check for presence of dD etc vs Delta_D_H etc --------------------
+# -------------------- Dictate the delta calculation you are going to use, Picarro's or IsoLab's --------------------
 """dD is a DIY delta calculation using strengths whereas Delta_D_H is picarros calculation. They
    are nominally the same."""
-if 'dD' not in datasets:
+
+delta_calc_choice = 'picarro'  # change to isolab for IsoLab's delta calculation using the raw absorption peak or strength.
+
+
+if 'dDi' not in datasets:
+    dcc = 'p'
+    print('\n    Version 1.2 or lower was used to create the hdf5 file. This is fine, and means that your delta values originate from the Picarro software (rather than from Team IsoLab). If you want the choice, re-run picarro_h5.py.\n')
     dD = Delta_D_H.copy()
     datasets.append('dD')
     d18O = Delta_18_16.copy()
@@ -98,20 +115,54 @@ if 'dD' not in datasets:
     if instrument['O17_flag']:
         d17O = Delta_17_16.copy()
         datasets.append('d17O')
+else:
+    if delta_calc_choice == 'picarro':
+        dcc = 'p'
+        print("\n    Using Picarro delta values. If you want Team IsoLab's, change 'delta_calc_choice' to isolab.\n")
+        dD = dDp.copy()
+        datasets.append('dD')
+        d18O = d18Op.copy()
+        datasets.append('d18O')
+        if instrument['O17_flag']:
+            d17O = d17Op.copy()
+            datasets.append('d17O')
+    elif delta_calc_choice == 'isolab':
+        dcc = 'i'
+        print("\n    Using IsoLab delta values. If you want Picarros's, change 'delta_calc_choice' to picarro.\n")
+        dD = dDi.copy()
+        datasets.append('dD')
+        d18O = d18Oi.copy()
+        datasets.append('d18O')
+        if instrument['O17_flag']:
+            d17O = d17Oi.copy()
+            datasets.append('d17O')
 
 
 # -------------------- Find individual injections --------------------
 print('\n    Finding injection peaks.')
 
-H2O_THRESHOLD = 3000 #3000
-dH2O_dT_threshold = 300
-dH2O_dT2_threshold = 30
-kernel_size = 3
+# check for the existence of a settings file to grab custom injection detection parameters
+if os.path.isfile(os.path.join(run_dir, 'peak_detection_settings.json')):
+    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'r') as f:
+        pds = json.load(f)
+
+else:
+    pds_headers = ['H2O_THRESHOLD', 'dH2O_dT_threshold', 'dH2O_dT2_threshold', 'kernel_size']
+    pds = {}
+    pds['H2O_THRESHOLD'] = 3000
+    pds['dH2O_dT_threshold'] = 300
+    pds['dH2O_dT2_threshold'] = 30
+    pds['kernel_size'] = 3
+    pds['min_pts_between_pks'] = 60
+
+    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w') as f:
+        json.dump(pds, f)
+
 
 time_diff = np.diff(time)
 time_diff = np.append(time_diff, np.mean(time_diff))
 
-kernel = np.ones(kernel_size) / kernel_size
+kernel = np.ones(pds['kernel_size']) / pds['kernel_size']
 H2O_convolved = np.convolve(H2O, kernel, mode='same')
 
 H2O_diff = np.diff(H2O_convolved)
@@ -124,44 +175,73 @@ dH2O_dT2 = np.diff(dH2O_dT_convolved)
 dH2O_dT2 = np.append(dH2O_dT2, dH2O_dT2[-1])
 dH2O_dT2_convolved = np.convolve(dH2O_dT2, kernel, mode='same')
 
-pks = np.where(np.logical_and(np.logical_and(abs(dH2O_dT2_convolved) < dH2O_dT2_threshold, H2O > H2O_THRESHOLD),
-                              np.logical_and(dH2O_dT_convolved > 0, dH2O_dT_convolved < dH2O_dT_threshold)))[0]
+pks = np.where(np.logical_and(np.logical_and(abs(dH2O_dT2_convolved) < pds['dH2O_dT2_threshold'], H2O > pds['H2O_THRESHOLD']),
+                              np.logical_and(dH2O_dT_convolved > 0, dH2O_dT_convolved < pds['dH2O_dT_threshold'])))[0]
 
 adi = np.arange(0, len(H2O), 1)
-pks_end = np.asarray(np.diff(pks) > 10).nonzero()[0]
+pks_end = np.asarray(np.diff(pks) > pds['min_pts_between_pks']).nonzero()[0]
 end_of_each_inj = adi[pks[pks_end]]
 end_of_each_inj = np.append(end_of_each_inj, pks[-1])
 pks_start = pks_end + 1
 start_of_each_inj = adi[pks[pks_start]]
 start_of_each_inj = np.insert(start_of_each_inj, 0, pks[0])
 
+inj_gdi = [adi[i:j] for i, j in zip(start_of_each_inj, end_of_each_inj)]
+gdi = np.concatenate(inj_gdi).ravel()
+
 
 # -------------------- Summarize Injection Data --------------------
 print('\n    Summarizing injection data.')
 
-inj = {}
-for data in datasets:
-    inj[data] = {}
-    inj[data]['mean'] = np.array(np.zeros(len(start_of_each_inj)))
-    inj[data]['std'] = np.array(np.zeros(len(start_of_each_inj)))
+inj_exclude_list = ['ALARM_STATUS', 'AccelX', 'AccelY', 'AccelZ', 'Battery_Charge', 'Battery_Current', 'Battery_Temperature', 'Battery_Voltage',
+                    'CH4_2min', 'CH4_30s', 'CH4_5min', 'CavityTemp1', 'CavityTemp2', 'CavityTemp3', 'CavityTemp4', 'FanState', 'Flow1',
+                    'InletValve', 'Laser3Current', 'Laser3Tec', 'Laser3Temp', 'Laser4Current', 'Laser4Tec', 'Laser4Temp', 'ProcessedLoss1',
+                    'ProcessedLoss2', 'ProcessedLoss3', 'ProcessedLoss4', 'SchemeTable', 'SchemeVersion', 'SpectrumID', 'cal_enabled', 'n2_flag']
+included_datasets = list(set(datasets) - set(inj_exclude_list))
+
+# RuntimeWarnings in this block and caught separately with my own notification
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=RuntimeWarning)
+
+    inj = {}
+    for data in included_datasets:
+        inj[data] = {}
+        inj[data]['mean'] = np.array(np.zeros(len(start_of_each_inj)))
+        inj[data]['std'] = np.array(np.zeros(len(start_of_each_inj)))
+
+        for i, _ in enumerate(start_of_each_inj):
+            if data == 'dD' and (end_of_each_inj[i] - start_of_each_inj[i]) > 120:
+                curr_range = range(start_of_each_inj[i], start_of_each_inj[i] + 120)
+            else:
+                curr_range = range(start_of_each_inj[i], end_of_each_inj[i])
+            try:
+                inj[data]['mean'][i] = np.nanmean(eval(data)[curr_range])
+                inj[data]['std'][i] = np.nanstd(eval(data)[curr_range])
+            except (FloatingPointError, TypeError) as error:
+                print(f'    **** Error with index {i} - {error} ****    ')
+                inj[data]['mean'][i] = np.nan
+                inj[data]['std'][i] = np.nan
+
+    # Add custom arrays to inj dictionary that are otherwise not appropriate for mean and standard deviation.
+    #    These variable names also need to be added to the list inj_extra_list inside picarro_vial.py.
+    inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
+
+    for data in inj_extra_list:
+        inj[data] = np.array(np.zeros(len(start_of_each_inj)))
 
     for i, _ in enumerate(start_of_each_inj):
-        if data == 'dD' and (end_of_each_inj[i] - start_of_each_inj[i]) > 120:
-            curr_range = range(start_of_each_inj[i], start_of_each_inj[i] + 120)
-        else:
-            curr_range = range(start_of_each_inj[i], end_of_each_inj[i])
+        curr_range = range(start_of_each_inj[i], end_of_each_inj[i])
         try:
-            inj[data]['mean'][i] = np.nanmean(eval(data)[curr_range])
-            inj[data]['std'][i] = np.nanstd(eval(data)[curr_range])
-        except FloatingPointError as error:
-            print(f'    **** {error} ****    ')
-            inj[data]['mean'][i] = np.nan
-            inj[data]['std'][i] = np.nan
-
-inj['n_high_res'] = np.asarray([len(H2O[i:j]) for i, j in zip(start_of_each_inj, end_of_each_inj)])
-
-inj_gdi = [adi[i:j] for i, j in zip(start_of_each_inj, end_of_each_inj)]
-gdi = np.concatenate(inj_gdi).ravel()
+            inj['n_high_res'][i] = np.asarray(len(H2O[curr_range]))
+            inj['H2O_time_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], time[curr_range], 1)[0])
+            inj['dD_time_slope'][i] = np.asarray(np.polyfit(time[curr_range], dD[curr_range], 1)[0])
+            inj['d18O_time_slope'][i] = np.asarray(np.polyfit(time[curr_range], d18O[curr_range], 1)[0])
+            inj['dD_H2O_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], dD[curr_range], 1)[0])
+            inj['d18O_H2O_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], d18O[curr_range], 1)[0])
+        except (FloatingPointError, TypeError) as error:
+            print(f'    **** Error with index {i} - {error} ****    ')
+            for data in inj_extra_list:
+                inj[data][i] = np.nan
 
 
 # -------------------- tray description file --------------------
@@ -177,9 +257,14 @@ detected_inj = len(inj['H2O']['mean'])
 expected_inj = np.asarray(tray_data['Injections'], dtype=int)
 
 if np.sum(expected_inj) != detected_inj:
+
     # -------------------- If actual number of injections do not match expected number of injections --------------------
     print(f"\n** Expecting {np.sum(expected_inj)} injections. Found {detected_inj} injections. Look carefully at the figure to assess what went wrong. **")
     t.sleep(2)
+
+    # save injection detection parameters and tell user to edit them
+    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', newline='') as f:
+        json.dump(pds, f, indent=2)
 
     fig_a = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig_a.circle(adi, H2O, color="black", legend_label="All data", size=2)
@@ -222,6 +307,9 @@ if np.sum(expected_inj) != detected_inj:
     webbrowser.open(html_path)
 
 else:
+    # set flag that all expected injections from tray file equals the number of detected injections
+    accounted_for_all_injs = 1
+
     # -------------------- remove mismatch file if it exists --------------------
     if os.path.isfile(os.path.join(run_dir, f'{hdf5_file[0:-5]}_Injection_Accounting_Problem.html')):
         os.remove(os.path.join(run_dir, f'{hdf5_file[0:-5]}_Injection_Accounting_Problem.html'))
@@ -362,12 +450,14 @@ else:
 
     # -------------------- write injection level data to json file --------------------
     inj_export = inj.copy()
-    for data in datasets:
+    for data in included_datasets:
         inj_export[data]['mean'] = inj[data]['mean'].tolist()
         inj_export[data]['std'] = inj[data]['std'].tolist()
-    inj_export['n_high_res'] = inj['n_high_res'].tolist()
-    inj_export['flag'] = inj['flag'].tolist()
+    for data in inj_extra_list:
+        inj_export[data] = inj[data].tolist()
+
+    inj_export['flag'] = inj_export['flag'].tolist()
     inj_export['vial_num'] = [int(i) for i in inj['vial_num']]
 
-    with open(os.path.join(run_dir, f'{hdf5_file[0:-5]}_injections.json'), 'w') as fp:
+    with open(os.path.join(run_dir, f'{hdf5_file[0:-5]}_{dcc}_injections.json'), 'w') as fp:
         json.dump(inj_export, fp)
