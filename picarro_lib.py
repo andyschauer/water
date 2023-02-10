@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
 Library of functions used by the IsoLab picarro_* suite of python scripts.
+
+As of version 1.3 I am trying to investigate how the IsoLab delta value calculations are sensitive to
+H2O ppmv when they did not used to be, for phoenix at least. As such, I have added an 'i' to all variable
+names that are associated with IsoLab's delta calculations to indicate they are isolab's. A 'p' on the end
+of a delta or ratio indicates Picarro's calculation.
 """
 
 __author__ = "Andy Schauer"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__email__ = "aschauer@uw.edu"
+__last_modified__ = "2023-02-09"
+__version__ = "1.3"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.2"
-__email__ = "aschauer@uw.edu"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- imports --------------------
@@ -21,11 +27,11 @@ import time as t
 def get_path(desired_path):
     """Make your life easier with this section. These are the paths that seem to change depending on the computer we are working on."""
     if desired_path == "project":
-        return "S:/Data/projects/"
+        return "/your/project/directory/"
     elif desired_path == "python":
-        return "S:/Data/python/"
+        return "/your/python/directory/"
     elif desired_path == "standards":
-        return "S:/Data/ReferenceMaterials/reference_materials.json"
+        return "/your/reference_material/directory/reference_materials.json"
 
 
 def get_instrument():
@@ -50,8 +56,8 @@ def get_instrument():
                 'model': 'L2130i',
                 'O17_flag': False}
             ref_ratios = {
-                'rDH': 0.1744,
-                'r1816': 1.7540,
+                'rDHi': 0.1744,
+                'r1816i': 1.7540,
                 'notes': """Reference values are from Abel (an L2130i) 20220901 calibrated vial level data using KD.
                             np.mean(vial['peak3_offset']['mean'][kd['index']]/vial['peak2_offset']['mean'][kd['index']])"""}
             inj_peak = {
@@ -88,10 +94,10 @@ def get_instrument():
                 'model': 'L2140i',
                 'O17_flag': True}
             ref_ratios = {
-                'rDH': 0.1509,
-                'r1816': 1.6954,
-                'r1716': 0.5854,
-                'r1816b': 0.9623}
+                'rDHi': 0.1509,
+                'r1816i': 1.6954,
+                'r1716i': 0.5854,
+                'r1816i_1v2': 0.9623}
             inj_peak = {
                 'H2O_detection_limit': 5000,
                 'trim_from_start': 35,
@@ -111,10 +117,10 @@ def get_instrument():
 
         if 'ref_ratios' not in locals():
             ref_ratios = {
-                'rDH': 0.1500,
-                'r1816': 1.7000,
-                'r1716': 0.5900,
-                'r1816b': 0.9600}
+                'rDHi': 0.1500,
+                'r1816i': 1.7000,
+                'r1716i': 0.5900,
+                'r1816i_1v2': 0.9600}
             print(' ')
             print(' **** Using placeholder isotopic reference values that need to be updated to this specific instrument. ****')
             print(' ')
@@ -193,6 +199,7 @@ def read_file(file_to_import, delim=None, header_row=1):
                 data[h].append(v)
 
     return headers, data
+
 
 
 # -------------------- python scripts --------------------
