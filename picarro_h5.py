@@ -5,22 +5,26 @@ Hierarchical Data Format) contain data at about 1 Hz frequency. This script simp
 range of h5 files, allows the user to trim the ends and then saves the dataset as a new hdf5 file. While
 this script was written with Picarro's water isotope instruments in mind, in principle, it should work for
 any Picarro CRDS instrument.
+
+In version 1.3, I am not explicitly keeping track of picarro vs isolab delta value calculations by adding
+a 'p' for picarro and an 'i' for isolab on any variable name having to do with a delta calculation (e.g., d18Oi).
 """
 
 __author__ = "Andy Schauer"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
+__email__ = "aschauer@uw.edu"
+__last_modified__ = "2023-02-09"
+__version__ = "1.3"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
-__version__ = "1.2"
-__email__ = "aschauer@uw.edu"
+__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- imports --------------------
 import argparse
 from datetime import datetime
 import h5py
-import numpy as np
 import matplotlib.pyplot as pplt
+import numpy as np
 import os
 from picarro_lib import *
 import time as t
@@ -180,29 +184,39 @@ for header in headers:
     Raw delta calculations - John Hoffnagle's calculation - based on strengths and uses laser 2 minor
     masses and laser 1 major mass. The _offset values have been corrected
     for water vapor concentration (e.g. str3_offset). The non offset values
-    have not been corrected for water vapor concentration (e.g. strength3)."""
+    have not been corrected for water vapor concentration (e.g. strength3).
 
+    As of 2023-01-25, we have discovered an issue with this strategy. Even though we have been using
+    these below calculations since the development of the 2140 (c. 2013), we have seen evidence that
+    the water vapor correction applied to the strength offset values may have changed or in some way
+    they now appear sensitive to H2O ppmv. We continue to look into this issue and for now are formally
+    separating the 'Picarro' delta values (e.g., d18Op) from the IsoLab delta values (e.g., d18Oi)."""
+
+hdf5_additions = ['dDp', 'rDHi', 'dDi', 'd18Op', 'r1816i', 'd18Oi']
 if instrument['O17_flag']:
-    hdf5_additions = ['rDH', 'dD', 'r1816', 'd18O', 'r1716', 'd17O', 'r1816b', 'd18Ob']
+    hdf5_additions.extend(['d17Op', 'r1716i', 'd17Oi', 'r1816i_1v2', 'd18Oi_1v2'])
 
-    rDH = str3_offset / str2_offset
-    r1816 = str1_offset / str2_offset
-    r1716 = str13_offset / str2_offset
-    r1816b = str11_offset / str2_offset
+    rDHi = str3_offset / str2_offset
+    r1816i = str1_offset / str2_offset
+    r1716i = str13_offset / str2_offset
+    r1816i_1v2 = str11_offset / str2_offset
 
-    d17O = (r1716 / ref_ratios['r1716'] - 1) * 1000
-    d18Ob = (r1816b / ref_ratios['r1816b'] - 1) * 1000
+    d17Oi = (r1716i / ref_ratios['r1716i'] - 1) * 1000
+    d18Oi_1v2 = (r1816i_1v2 / ref_ratios['r1816i_1v2'] - 1) * 1000
+
+    d17Op = Delta_17_16
 
 else:
-    hdf5_additions = ['rDH', 'dD', 'r1816', 'd18O']
+    rDHi = peak3_offset / peak2_offset
+    r1816i = peak1_offset / peak2_offset
 
-    rDH = peak3_offset / peak2_offset
-    r1816 = peak1_offset / peak2_offset
-
-dD = (rDH / ref_ratios['rDH'] - 1) * 1000
-d18O = (r1816 / ref_ratios['r1816'] - 1) * 1000
+dDi = (rDHi / ref_ratios['rDHi'] - 1) * 1000
+d18Oi = (r1816i / ref_ratios['r1816i'] - 1) * 1000
 
 headers = headers + hdf5_additions
+
+dDp = Delta_D_H
+d18Op = Delta_18_16
 
 
 # -------------------- save h5_data set as single hdf5 file --------------------
