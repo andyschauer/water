@@ -3,11 +3,13 @@
 This is the final script for discrete injection type data. It summarizes injections from individual vials
 and then calibrates dD, d18O, (and d17O if using a L2140i) to the VSMOW-SLAP scale. Ideally, picarro_h5.py and
 picarro_inj.py were run prior to the present script.
+
+Version 1.3 mod date 2023-02-14 => found bug in no drift correction on L2130 instrument. Fixed.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-09"
+__last_modified__ = "2023-02-14"
 __version__ = "1.3"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
@@ -331,7 +333,8 @@ else:
     print("No drift Correction was applied.")
     vial['dD_drift_corr'] = np.asarray(vial['dD']['mean'])
     vial['d18O_drift_corr'] = np.asarray(vial['d18O']['mean'])
-    vial['d17O_drift_corr'] = np.asarray(vial['d17O']['mean'])
+    if instrument['O17_flag']:
+        vial['d17O_drift_corr'] = np.asarray(vial['d17O']['mean'])
 
 
 # -------------------- Normalize to vsmow-slap --------------------
@@ -440,6 +443,7 @@ if os.path.exists(report_dir):
 shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 [shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
+shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 
 
 # -------------------- Figures --------------------
