@@ -5,19 +5,15 @@ This script will find each injection and reduce the h5 level data (~ 1 Hz data) 
 description file is required. This script effectively creates Picarro's Coordinator output, albeit in json format
 and with all of the data fields present that are in the original h5 files.
 
-Version 1.3 from 2023-02-09 has a peak_detection_settings.json file with dictionary pds to keep track of custom settings related
-to, wait for it, peak detection. It turns out different instruments, injection strategies, injection errors, and other anomolous
-peak shape issues make it very difficult to have a single set of parameters to detect injection peaks. Defaults are here but then
-saved to the above json file for modification if peak detection issues are noted. Then, if that file exists, this script will use
-those settings, not the default hard coded settings.
-
-Other additions include removing unused variables from the inj dictionary, calculation and inclusion of the slope
+Version 1.4 from 2023-02-14 has the the tray description file parsing higher in the code so that if it errors out we don't have
+to wait for the injection level data to completely process. Also, it attempts to help the user understand that a tray description
+file error is happening and prompts for the issue to be fixed before continuing.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-09"
-__version__ = "1.3"
+__last_modified__ = "2023-02-14"
+__version__ = "1.4"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -59,13 +55,13 @@ print('\nChoose from the run list below:')
 [print(f'    {i}') for i in run_list]
 identified_run = 0
 while identified_run == 0:
-    run_search = input('Enter the run you wish to process: ')
+    run_search = input('\nEnter the run you wish to process: ')
     isdir = [run_search[0: len(run_search)] in x for x in run_list]
     if len(np.where(isdir)[0]) == 1:
         identified_run = 1
         run = run_list[np.where(isdir)[0][0]]
         run_dir += f'{run}/'
-        print(f'    Processing run {run}...')
+        print(f'\n    Processing run {run}...')
     else:
         print('\n** More than one run found. **\n')
 
@@ -89,6 +85,51 @@ else:
     hdf5_file = hdf5_list[0]
 
 np.seterr(all='raise')
+
+
+# -------------------- tray description file --------------------
+identified_file = 0
+while identified_file == 0:
+    tray_descriptions = make_file_list(os.path.join(project_dir, 'TrayDescriptions/'), '.csv')
+    tray_description_file_list = [i for i in tray_descriptions if hdf5_file[0:8] in i]
+    if tray_description_file_list:
+        if len(tray_description_file_list) > 1:
+            print(f'\n ** More than one tray description file starting with {hdf5_file[0:8]} was found.')
+            [print(f'    {i}') for i in tray_description_file_list]
+            tray_description_file = input('Enter the tray description file name you want to use: ')
+            if tray_description_file in tray_description_file_list:
+                identified_file = 1
+                print('    Tray description file found.')
+            else:
+                print('The file you entered is not in the list. Try again.')
+        else:
+            print('    Tray description file found.')
+            identified_file = 1
+            tray_description_file = tray_description_file_list[0]
+            shutil.copy2(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file), os.path.join(project_dir, run_dir, tray_description_file))
+
+    else:
+        print('\n ** Tray description file not found. **')
+        print(f"        - Make sure a file with called '{hdf5_file[0:8]}_[your-project]_TrayDescripion.csv' is in {instrument['name']}'s TrayDescriptions folder .")
+        input('\n    Fix this issue, come back, and hit ENTER to continue.')
+
+tray_file_good = False
+while tray_file_good is False:
+    tray_headers, tray_data = read_file(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file), ',')
+    try:
+        # Project,Tray,Vial,Identifier 1,Injections
+        project = tray_data['Project']
+        tray = tray_data['Tray']
+        vial = np.asarray(tray_data['Vial'], dtype=int)
+        id1 = tray_data['Identifier1']
+        expected_inj = np.asarray(tray_data['Injections'], dtype=int)
+        print('    Tray description file read in successfully.')
+        tray_file_good = True
+    except KeyError:
+        print('\n ** Problem with TrayDescription file. ** ')
+        print('        - Make sure your tray description file has these column headings "Project, Tray, Vial, Identifier 1, Injections".')
+        print('        - If all the above columns are present, open it in a text editor (NOT EXCEL) and make sure their are no extra commas at the bottom.')
+        input('\n    Fix the error, save the tray description file, come back, and hit ENTER to continue.')
 
 
 # -------------------- read in data from hdf5 file --------------------
@@ -244,17 +285,9 @@ with warnings.catch_warnings():
                 inj[data][i] = np.nan
 
 
-# -------------------- tray description file --------------------
-tray_descriptions = make_file_list(os.path.join(project_dir, 'TrayDescriptions/'), '.csv')
-tray_description_file = [i for i in tray_descriptions if hdf5_file[0:8] in i]
-shutil.copy2(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file[0]), os.path.join(project_dir, run_dir, tray_description_file[0]))
-tray_headers, tray_data = read_file(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file[0]), ',')
-vial = np.asarray(tray_data['Vial'], dtype=int)
-
-
 # -------------------- compare detected injections with expected injections from tray description --------------------
 detected_inj = len(inj['H2O']['mean'])
-expected_inj = np.asarray(tray_data['Injections'], dtype=int)
+
 
 if np.sum(expected_inj) != detected_inj:
 
@@ -315,9 +348,9 @@ else:
         os.remove(os.path.join(run_dir, f'{hdf5_file[0:-5]}_Injection_Accounting_Problem.html'))
 
     # -------------------- put sample IDs and vial inj number into inj dictionary --------------------
-    inj['project'] = [[i] * j for i, j in zip(tray_data['Project'], expected_inj)]
+    inj['project'] = [[i] * j for i, j in zip(project, expected_inj)]
     inj['project'] = [x for xs in inj['project'] for x in xs]
-    inj['id1'] = [[i] * j for i, j in zip(tray_data['Identifier1'], expected_inj)]
+    inj['id1'] = [[i] * j for i, j in zip(id1, expected_inj)]
     inj['id1'] = [x for xs in inj['id1'] for x in xs]
     inj['vial_num'] = [[i] * j for i, j in zip(vial, expected_inj)]
     inj['vial_num'] = [x for xs in inj['vial_num'] for x in xs]
