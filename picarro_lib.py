@@ -6,12 +6,15 @@ As of version 1.3 I am trying to investigate how the IsoLab delta value calculat
 H2O ppmv when they did not used to be, for phoenix at least. As such, I have added an 'i' to all variable
 names that are associated with IsoLab's delta calculations to indicate they are isolab's. A 'p' on the end
 of a delta or ratio indicates Picarro's calculation.
+
+Version 1.4 adds a picarro_path.txt to save me time in moving the picarro_lib.py file around and dealing
+with all the different directory structures on different computers.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-09"
-__version__ = "1.3"
+__last_modified__ = "2023-02-16"
+__version__ = "1.4"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -26,12 +29,52 @@ import time as t
 # -------------------- functions --------------------
 def get_path(desired_path):
     """Make your life easier with this section. These are the paths that seem to change depending on the computer we are working on."""
+    picarro_path_file = os.path.join(os.getcwd(), 'picarro_path.txt')
+    if os.path.isfile(picarro_path_file):
+        # print(' :-) Using existing picarro path file for a warm and fuzzy experience. (-:')
+        with open(picarro_path_file, 'r') as ppf:
+            python_path, project_path, standards_path = ppf.readline().split(':')
+
+    else:
+        python_path_check = False
+        project_path_check = False
+        standards_path_check = False
+        print(' )-: Picarro path file does not exist yet. :-(')
+        print(" Let's make one... :-| ")
+        while python_path_check is False:
+            python_path = input(f'Enter the current path to the picarro python scripts. Perhaps it is {os.getcwd()}. ')
+            if os.path.isdir(python_path):
+                python_path_check = True
+                if python_path[-1] != '/':
+                    python_path += '/'
+            else:
+                print(f'oops, try typing that in again (you typed {python_path}): ')
+
+        while project_path_check is False:
+            project_path = input('Enter the current path to your projects: ')
+            if os.path.isdir(project_path):
+                project_path_check = True
+                if project_path[-1] != '/':
+                    project_path += '/'
+            else:
+                print(f'oops, try typing that in again (you typed {project_path}): ')
+
+        while standards_path_check is False:
+            standards_path = input('Enter the current path and filename to your reference materials file: ')
+            if os.path.isfile(standards_path):
+                standards_path_check = True
+            else:
+                print(f'oops, try typing that in again (you typed {standards_path}): ')
+
+        with open(picarro_path_file, 'w') as ppf:
+            ppf.write(f'{python_path}:{project_path}:{standards_path}')
+
     if desired_path == "project":
-        return "/your/project/directory/"
+        return project_path
     elif desired_path == "python":
-        return "/your/python/directory/"
+        return python_path
     elif desired_path == "standards":
-        return "/your/reference_material/directory/reference_materials.json"
+        return standards_path
 
 
 def get_instrument():
@@ -199,7 +242,6 @@ def read_file(file_to_import, delim=None, header_row=1):
                 data[h].append(v)
 
     return headers, data
-
 
 
 # -------------------- python scripts --------------------
