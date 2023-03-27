@@ -8,12 +8,14 @@ any Picarro CRDS instrument.
 
 In version 1.3, I am not explicitly keeping track of picarro vs isolab delta value calculations by adding
 a 'p' for picarro and an 'i' for isolab on any variable name having to do with a delta calculation (e.g., d18Oi).
+
+In version 1.4 adds the ability to import data from an instrument that is not explicitly listed.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-09"
-__version__ = "1.3"
+__last_modified__ = "2023-03-24"
+__version__ = "1.4"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -64,7 +66,11 @@ instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
 
 
 # -------------------- paths --------------------
-project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
+if instrument['name'] == 'not_listed':
+    project_dir = input('Enter the path to your h5 directory: ')
+else:
+    project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
+
 run_dir = os.path.join(project_dir, 'runs/')
 h5_dir = os.path.join(project_dir, 'h5/Picarro/G2000/Log/DataLogger/DataLog_Private/')
 
