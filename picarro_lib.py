@@ -9,12 +9,14 @@ of a delta or ratio indicates Picarro's calculation.
 
 Version 1.4 adds a picarro_path.txt to save me time in moving the picarro_lib.py file around and dealing
 with all the different directory structures on different computers.
+
+Version 1.5 adds the ability to import data from an instrument that is not explicitly listed.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-16"
-__version__ = "1.4"
+__last_modified__ = "2023-03-24"
+__version__ = "1.5"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -33,7 +35,7 @@ def get_path(desired_path):
     if os.path.isfile(picarro_path_file):
         # print(' :-) Using existing picarro path file for a warm and fuzzy experience. (-:')
         with open(picarro_path_file, 'r') as ppf:
-            python_path, project_path, standards_path = ppf.readline().split(':')
+            python_path, project_path, standards_path = ppf.readline().split(',')
 
     else:
         python_path_check = False
@@ -67,7 +69,7 @@ def get_path(desired_path):
                 print(f'oops, try typing that in again (you typed {standards_path}): ')
 
         with open(picarro_path_file, 'w') as ppf:
-            ppf.write(f'{python_path}:{project_path}:{standards_path}')
+            ppf.write(f'{python_path},{project_path},{standards_path}')
 
     if desired_path == "project":
         return project_path
@@ -75,6 +77,9 @@ def get_path(desired_path):
         return python_path
     elif desired_path == "standards":
         return standards_path
+    else:
+        unknown_path = input('Enter the path to your project: ')
+        return unknown_path
 
 
 def get_instrument():
@@ -87,7 +92,7 @@ def get_instrument():
         used provided we know that a particular standard is entering the cavity. See picarro_h5.py
         for the ratio calculation."""
 
-    instrument_list = 'abel, desoto, mildred, phoenix'
+    instrument_list = 'abel, desoto, mildred, phoenix, not_listed'
     name_recognized = False
 
     while name_recognized is False:
@@ -154,6 +159,25 @@ def get_instrument():
                 'max_H2O_std': 400,
                 'max_d18O_std': 0.2,
                 'max_dD_std': 2.00}
+
+        elif entered_name == 'not_listed':
+            name_recognized = True
+            name = 'not_listed'
+            valid_answer = False
+            while not valid_answer:
+                O17_flag = input('Does your instrument have O17 capability? (y or n) ')
+                if O17_flag == 'y':
+                    O17_flag = True
+                    valid_answer = True
+                elif O17_flag == 'n':
+                    O17_flag = False
+                    valid_answer = True
+                else:
+                    print('type y or n')
+            instrument = {
+                'name': name,
+                'model': 'unknown',
+                'O17_flag': O17_flag}
 
         else:
             print('\nInstrument not recognized.')
