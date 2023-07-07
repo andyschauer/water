@@ -8,12 +8,18 @@ and with all of the data fields present that are in the original h5 files.
 Version 1.4 from 2023-02-14 has the the tray description file parsing higher in the code so that if it errors out we don't have
 to wait for the injection level data to completely process. Also, it attempts to help the user understand that a tray description
 file error is happening and prompts for the issue to be fixed before continuing.
+
+Version 1.5 from 2023-06-07 has the ability to deal with the new Hot Tee injection method. Stay tuned for a publication on this.
+The short version is, the picarro vaporizer died and I took the opportunity to test a method I had been wondering about. Injecting
+very slowly into a hot tee. Turns out it works quite well. More on this later. Also in this version, and in an attempt to make a single
+script allow for many different types and sizes of injections, I have tried to make the peak detection settings (pds dictionary)
+more flexible. Version 1.51 corrects typo in figure legend.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-14"
-__version__ = "1.4"
+__last_modified__ = "2023-06-24"
+__version__ = "1.51"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -35,6 +41,16 @@ import shutil
 import time as t
 import warnings
 import webbrowser
+
+
+# -------------------- functions ------------------------------------
+def calc_mode(rd, rnd):
+    """Calculate the mode of a raw dataset rd after having rounded it to 
+    the nearest number of specified decimal places, rnd."""
+    d = [round(i, rnd) for i in rd]
+    v,c = np.unique(d, return_counts=True)
+    i = np.argmax(c)
+    return v[i]
 
 
 # -------------------- get instrument information --------------------
@@ -90,8 +106,8 @@ np.seterr(all='raise')
 # -------------------- tray description file --------------------
 identified_file = 0
 while identified_file == 0:
-    tray_descriptions = make_file_list(os.path.join(project_dir, 'TrayDescriptions/'), '.csv')
-    tray_description_file_list = [i for i in tray_descriptions if hdf5_file[0:8] in i]
+    tray_descriptions = make_file_list(os.path.join(project_dir, 'TrayDescriptions/'), 'TrayDescription.csv')
+    tray_description_file_list = [i for i in tray_descriptions if hdf5_file[0:8] in i[0:8]]
     if tray_description_file_list:
         if len(tray_description_file_list) > 1:
             print(f'\n ** More than one tray description file starting with {hdf5_file[0:8]} was found.')
@@ -182,53 +198,78 @@ else:
 # -------------------- Find individual injections --------------------
 print('\n    Finding injection peaks.')
 
-# check for the existence of a settings file to grab custom injection detection parameters
+
+# get mode of H2O so we know where to center the H2O thresholds
+#    - this assumes one injection size, still working on getting multiple injection sizes
+H2Omode = calc_mode(H2O[H2O>1000], -1) # round to nearest 10s position
+H2Omode_range = 10000
+
+
+# check for the existence of a settings file to grab custom peak detection settings
 if os.path.isfile(os.path.join(run_dir, 'peak_detection_settings.json')):
+    existing_pds = True
     with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'r') as f:
         pds = json.load(f)
 
 else:
-    pds_headers = ['H2O_THRESHOLD', 'dH2O_dT_threshold', 'dH2O_dT2_threshold', 'kernel_size']
-    pds = {}
-    pds['H2O_THRESHOLD'] = 3000
-    pds['dH2O_dT_threshold'] = 300
-    pds['dH2O_dT2_threshold'] = 30
-    pds['kernel_size'] = 3
-    pds['min_pts_between_pks'] = 60
+    existing_pds = False
+    pds = {"H2O_threshold_min": H2Omode - H2Omode_range/2,
+           "H2O_threshold_max": H2Omode + H2Omode_range/2,
+           "dH2O_dT2_threshold": 50,
+           "kernel_size": 5,
+           "min_pts_in_pks": 70,
+           "min_pts_between_pks": 60,  # about 60 seconds between peaks
+           "trim_end": 5,
+           "trim_start": 5}
 
-    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w') as f:
-        json.dump(pds, f)
-
+    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', encoding='utf-8') as f:
+        json.dump(pds, f, ensure_ascii=False, indent=4)
 
 time_diff = np.diff(time)
 time_diff = np.append(time_diff, np.mean(time_diff))
-
 kernel = np.ones(pds['kernel_size']) / pds['kernel_size']
 H2O_convolved = np.convolve(H2O, kernel, mode='same')
-
 H2O_diff = np.diff(H2O_convolved)
 H2O_diff = np.append(H2O_diff, H2O_diff[-1])  # duplicate last value so length of array is the same as the original length
-
 dH2O_dT = H2O_diff / time_diff
 dH2O_dT_convolved = np.convolve(dH2O_dT, kernel, mode='same')
-
 dH2O_dT2 = np.diff(dH2O_dT_convolved)
 dH2O_dT2 = np.append(dH2O_dT2, dH2O_dT2[-1])
 dH2O_dT2_convolved = np.convolve(dH2O_dT2, kernel, mode='same')
 
-pks = np.where(np.logical_and(np.logical_and(abs(dH2O_dT2_convolved) < pds['dH2O_dT2_threshold'], H2O > pds['H2O_THRESHOLD']),
-                              np.logical_and(dH2O_dT_convolved > 0, dH2O_dT_convolved < pds['dH2O_dT_threshold'])))[0]
+# update pds dictionary if one did not already exist
+if existing_pds is False:
+    pds['dH2O_dT2_threshold'] = np.std(dH2O_dT2_convolved)
+
+
+pks = np.where(np.logical_and(abs(dH2O_dT2_convolved) < pds['dH2O_dT2_threshold'], 
+                              np.logical_and(H2O > pds['H2O_threshold_min'],
+                                             H2O < pds['H2O_threshold_max'])))[0]
 
 adi = np.arange(0, len(H2O), 1)
 pks_end = np.asarray(np.diff(pks) > pds['min_pts_between_pks']).nonzero()[0]
 end_of_each_inj = adi[pks[pks_end]]
 end_of_each_inj = np.append(end_of_each_inj, pks[-1])
+end_of_each_inj = end_of_each_inj - pds['trim_end']
 pks_start = pks_end + 1
 start_of_each_inj = adi[pks[pks_start]]
 start_of_each_inj = np.insert(start_of_each_inj, 0, pks[0])
+start_of_each_inj = start_of_each_inj + pds['trim_start']
+
+# if the start of the peak is after the end of the peak, remove it from the peak indexing arrays
+to_be_deleted = []
+for i in range(len(start_of_each_inj)):
+    if start_of_each_inj[i] > end_of_each_inj[i]:
+        to_be_deleted.append(i)
+
+if len(to_be_deleted)>0:
+    start_of_each_inj = np.delete(start_of_each_inj, to_be_deleted)
+    end_of_each_inj = np.delete(end_of_each_inj, to_be_deleted)
+
 
 inj_gdi = [adi[i:j] for i, j in zip(start_of_each_inj, end_of_each_inj)]
 gdi = np.concatenate(inj_gdi).ravel()
+
 
 
 # -------------------- Summarize Injection Data --------------------
@@ -358,6 +399,24 @@ else:
     inj['inj_num'] = [x for xs in inj['inj_num'] for x in xs]
 
     # -------------------- quality control injections --------------------
+    inj_quality['max_H2O_std'] = round(calc_mode(inj['H2O']['std'], -1) * 3.3, 0)
+    inj_quality['max_d18O_std'] = round(calc_mode(inj['d18O']['std'], 1) * 3.3, 2)
+    inj_quality['max_dD_std'] = round(calc_mode(inj['dD']['std'], 1) * 3.3, 1)
+    
+    if inj_quality['max_H2O_std'] > 2000:
+        print(f" ** Check your injections, the H2O ppm seems noisier than normal.")
+    if inj_quality['max_d18O_std'] > 1.0:
+        print(f" ** Check your injections, the d18O seems noisier than normal.")
+    if inj_quality['max_dD_std'] > 2.0:
+        print(f" ** Check your injections, the dD seems noisier than normal.")
+
+
+    # # used for all campcentury runs
+    # inj_quality['max_H2O_std'] = 5000
+    # inj_quality['max_d18O_std'] = 5
+    # inj_quality['max_dD_std'] = 5
+
+
     inj['flag'] = np.ones(len(inj['H2O']['mean']))
     inj['flag_reason'] = [' ' for i in inj['flag']]
     for i, _ in enumerate(inj['H2O']['std']):
@@ -408,14 +467,14 @@ else:
     fig3.circle(gdi, dD[gdi], color="green", legend_label="Good data", size=6)
     fig3.circle(fdi, dD[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig3_caption = f"""Figure 3. Hydrogen isotope composition (dD or delta Dee). Injections with a standard
-                       deviation greatern than {inj_quality['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
+                       deviation greater than {inj_quality['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig4.circle(adi, d18O, color="black", legend_label="All data", size=2)
     fig4.circle(gdi, d18O[gdi], color="green", legend_label="Good data", size=6)
     fig4.circle(fdi, d18O[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig4_caption = f"""Figure 3. Oxygen-18 isotope composition (d18O or delta 18 Oh). Injections with a standard
-                       deviation greatern than {inj_quality['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
+                       deviation greater than {inj_quality['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     # -------------------- prepare run directory --------------------
     shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), os.path.join(run_dir, 'py_style.css'))
