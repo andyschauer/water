@@ -5,12 +5,16 @@ and then calibrates dD, d18O, (and d17O if using a L2140i) to the VSMOW-SLAP sca
 picarro_inj.py were run prior to the present script.
 
 Version 1.3 mod date 2023-02-14 => found bug in no drift correction on L2130 instrument. Fixed.
+Version 1.4 mod date 2023-05-07 => found bug when a reference water had a null value. Changed to np.nan. Seems to work fine now.
+Version 1.41 mod date 2023.05.30 => minor change of "water" to "waters" with respect to the reference materials json file. I
+    updated the refmat file for broader reach.
+Version 1.5 mod date 2023.06.28 => added tray description file to report directory and report
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-02-14"
-__version__ = "1.3"
+__last_modified__ = "2023-06-28"
+__version__ = "1.5"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -49,7 +53,7 @@ def fig_in_html(fhp, figname, caption):
 
 
 # -------------------- CONSTANTS --------------------
-FIRST_INJECTIONS_TO_IGNORE = 5
+FIRST_INJECTIONS_TO_IGNORE = 3
 DRIFT_CORRECTION = False
 
 
@@ -95,7 +99,7 @@ for i in inj_file_list:
         inj_file_list.remove(i)
 
 if run_or_set == 'run':
-    """If we are processing a single run, the reduced the injection json file list to a single file but keep it as a list."""
+    """If we are processing a single run, then reduce the injection json file list to a single file but keep it as a list."""
     if len(inj_file_list) > 1:
         print('\nChoose from the file list below:')
         [print(f'    {i}') for i in inj_file_list]
@@ -138,6 +142,7 @@ for inj_file in inj_file_list:
         vial['total_inj'] = np.empty(0)
         vial['n_inj'] = np.empty(0)
         vial['inj_file'] = np.empty(0)
+        vial['n_high_res'] = np.empty(0)
 
     for key in inj.keys():  # create numpy arrays for all injection level data
         if key not in inj_extra_list:
@@ -172,6 +177,7 @@ for inj_file in inj_file_list:
     vial['id1'] = np.append(vial['id1'], id1[np.where(inj_num == 1)[0]])
     vial['total_inj'] = np.append(vial['total_inj'], [np.size(time[np.where((vial_num == i))[0]]) for i in vial_set])
     vial['n_inj'] = np.append(vial['n_inj'], [np.size(time[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
+    vial['n_high_res'] = np.append(vial['n_high_res'], [np.sum(n_high_res[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
     vial['inj_file'] = np.append(vial['inj_file'], ([inj_file for i in vial_set]))
 
 vial['set_vial_num'] = np.asarray(list(range(1, len(vial['id1']) + 1)))
@@ -215,8 +221,8 @@ vial['notes'] = np.asarray(vial['notes'])
 
 
 # -------------------- Remove superfluous vial keys and sort based on time --------------------
-remove_from_vial_dict = ['n_high_res', 'inj_num', 'flag_reason', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
-vial_extra_list = ['project', 'id1', 'flag', 'n_inj', 'notes', 'vial_num', 'inj_file', 'set_vial_num', 'total_inj']
+remove_from_vial_dict = ['inj_num', 'flag_reason', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
+vial_extra_list = ['project', 'id1', 'flag', 'n_inj', 'notes', 'vial_num', 'inj_file', 'set_vial_num', 'total_inj', 'n_high_res']
 
 for i in remove_from_vial_dict:
     if i in vial.keys():
@@ -240,18 +246,19 @@ vial_index_flag0 = [i for i, e in enumerate(vial['flag']) if int(e) == 0]
 with open(get_path("standards"), 'r') as refmat_file:
     refmat = json.load(refmat_file)
 
-refmat_keys = refmat['water'].keys()
+refmat_keys = refmat['waters'].keys()
 for i in refmat_keys:
-    globals()[i] = refmat['water'][i]
+    globals()[i] = refmat['waters'][i]
     globals()[i]['index'] = np.empty(0, dtype="int16")
-
+    if eval(i)['D17O'] is None:
+        eval(i)['D17O'] = np.nan
 
 # -------------------- Find vials containing reference waters --------------------
 vial_index_all = np.asarray(vial['vial_num']) - 1
 ref_wat = {'vial_index': np.empty(0, dtype="int16"),
            'id1': []}
 for i in range(len(vial['id1'])):
-    for j, k in refmat['water'].items():
+    for j, k in refmat['waters'].items():
         if vial['id1'][i].lower() == k['name'].lower() and vial['flag'][i] == 1:
             ref_wat['id1'].append(vial['id1'][i])
             k['index'] = np.append(k['index'], int(i))
@@ -444,6 +451,8 @@ shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 [shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
+tray_description_file = make_file_list(run_dir, 'TrayDescription.csv')[0]
+shutil.copy2(os.path.join(run_dir, tray_description_file), os.path.join(run_dir, report_dir, tray_description_file))
 
 
 # -------------------- Figures --------------------
@@ -721,6 +730,8 @@ header = f"""
             <tr><td><br></td></tr>
             <tr><td>Number of conditioners</a></td><td>{len(vial_index_cndtnr)}</td></tr>
             <tr><td>Number of <a href="#excluded">excluded analyses</a></td><td>{len(vial_index_flag0)}</td></tr>
+            <tr><td><br></td></tr>
+            <tr><td><a href="{tray_description_file}">Original Tray Description File</a></td></tr>
         </table>
     </div>
 
