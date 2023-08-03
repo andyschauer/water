@@ -9,12 +9,13 @@ Version 1.4 mod date 2023-05-07 => found bug when a reference water had a null v
 Version 1.41 mod date 2023.05.30 => minor change of "water" to "waters" with respect to the reference materials json file. I
     updated the refmat file for broader reach.
 Version 1.5 mod date 2023.06.28 => added tray description file to report directory and report
+Version 1.6 mod date 2023.06.28 => added memory calculation
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-06-28"
-__version__ = "1.5"
+__last_modified__ = "2023-08-01"
+__version__ = "1.6"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -52,6 +53,50 @@ def fig_in_html(fhp, figname, caption):
     fhp.write(imgtag)
 
 
+def get_default_quality_control_parameters():
+    qcp = {'max_H2O_std': round(calc_mode(vial['H2O']['std'], -1) * 3.3, 0),
+           'max_d18O_std': round(calc_mode(vial['d18O']['std'], 2) * 3.3, 3),
+           'max_dD_std': round(calc_mode(vial['dD']['std'], 2) * 3.3, 2)}
+
+    if instrument['O17_flag']:
+        qcp['max_d17O_std'] = round(calc_mode(vial['d17O']['std'], 2) * 3.3, 3)
+
+    with open(os.path.join(run_dir, 'quality_control_parameters_vial.json'), 'w', encoding='utf-8') as f:
+        json.dump(qcp, f, ensure_ascii=False, indent=4)
+
+    return qcp
+
+
+def memory_calc(delta):
+    """This memory, or carry-over calculation attempts to estimate the proportion of water from the current injection
+    that is presently being measured. Some of the previously injected water is still present in the system. In this
+    calculation, a memory estimate of 0% would imply no carry-over at all and indicate that the only water presently
+    being measured is from the current injection. Memory estimates vary depending on the delta used. d18O tends to provide
+    a lower memory estimate compared with dD. As such, my default is to use the hydrogen isotope composition as a memory
+    estimate. Furthermore, this estimate seems to be only valid when the range is sufficiently large. This makes intuitive
+    sense because as the two waters become more similar, a memory estimate becomes more challenging to measure, and indeed,
+    less meaningful. I have placed a 10 permil difference threshold to cut off the erroneous estimates from those waters
+    with a less than 10 permil difference. Mathmatically, as the difference between the two waters goes to zero, the
+    proportion goes to zero.
+    """
+    memory = {
+        'vial_to_vial_range': np.zeros(len(vial['vial_num'])),
+        'within_vial_range': np.zeros(len(vial['vial_num'])),
+        'vial_memory': np.zeros(len(vial['vial_num']))}
+    for i in vial['vial_num']:
+        # get index of all injections for the current (v1) and previous (v0) vials
+        v1 = np.asarray(range(int(i*vial['total_inj'][i-1] - vial['total_inj'][i-1]), int(i*vial['total_inj'][i-1])), dtype='int')
+        v0 = np.array(v1 - vial['total_inj'][i-1], dtype='int')
+        memory['vial_to_vial_range'][i-1] = np.abs(np.mean(np.asarray(inj[delta]['mean'])[v1][-2:]) - np.mean(np.asarray(inj[delta]['mean'])[v0][-2:]))
+        memory['within_vial_range'][i-1] = np.abs(np.asarray(inj[delta]['mean'])[v1][0] - np.mean(np.asarray(inj[delta]['mean'])[v1][-2:]))
+        memory['vial_memory'][i-1] = 1 - ((memory['vial_to_vial_range'][i-1] - memory['within_vial_range'][i-1]) / memory['vial_to_vial_range'][i-1])
+        memory['mean'] = np.mean(memory['vial_memory'][np.where(memory['vial_to_vial_range']>10)])
+
+    return memory
+
+
+
+
 # -------------------- CONSTANTS --------------------
 FIRST_INJECTIONS_TO_IGNORE = 3
 DRIFT_CORRECTION = False
@@ -60,7 +105,7 @@ DRIFT_CORRECTION = False
 # -------------------- get instrument information --------------------
 """ Get specific picarro instrument whose data is being processed as well as some associated information. Populate
 this function with your own instrument(s). The function get_instrument() is located in picarro_lib.py."""
-instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
+instrument = get_instrument()
 
 
 # -------------------- paths --------------------
@@ -74,6 +119,8 @@ if run_or_set == 'run':
 
 elif run_or_set == 'set':
     run_dir = os.path.join(project_dir, 'sets/')
+
+archive_dir = os.path.join(run_dir, 'archive/')
 
 
 # ---------- Identify json data file(s) to be loaded ----------
@@ -94,9 +141,8 @@ while identified_run == 0:
         print('\n** More than one run / set found. **\n')
 
 inj_file_list = make_file_list(run_dir, 'json')
-for i in inj_file_list:
-    if i == 'peak_detection_settings.json':
-        inj_file_list.remove(i)
+exclude_file_list = ['peak_detection_settings.json', 'quality_control_parameters_inj.json', 'quality_control_parameters_vial.json']
+[inj_file_list.remove(i) for i in exclude_file_list if i in inj_file_list]
 
 if run_or_set == 'run':
     """If we are processing a single run, then reduce the injection json file list to a single file but keep it as a list."""
@@ -192,23 +238,53 @@ if 'dD' not in vial.keys():
         vial['d17O'] = vial['Delta_17_16'].copy()
 
 
-# -------------------- Screen vial level data for outliers --------------------
+# -------------------- Quality control vial level data --------------------
+print('\n    Checking quality of vial level data.')
+
+
+# Quality control vial parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+#    run, you may need to adjust the vial quality control parameters in order to salvage your data.
+
+# List of keys that are currently expected to be in the vial quality control parameters file. If they are different from this list, archive
+#    the file and make a new one.
+quality_control_parameters_vial_keys = ['max_H2O_std',
+                                        'max_d18O_std',
+                                        'max_dD_std']
+if instrument['O17_flag']:
+    quality_control_parameters_vial_keys.append('max_d17O_std')
+
+# Check for the existence of a settings file to grab existing peak detection settings
+qcp_file = os.path.join(run_dir, 'quality_control_parameters_vial.json')
+if os.path.isfile(qcp_file):
+    with open(qcp_file, 'r') as f:
+        qcp = json.load(f)
+
+    if set(qcp.keys()).issubset(quality_control_parameters_vial_keys) is False:
+        # archive existing file
+        shutil.copy2(qcp_file, os.path.join(archive_dir, f"quality_control_parameters_vial_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'quality_control_parameters_vial.json')))}.json"))
+        qcp = get_default_quality_control_parameters()
+
+else:
+    qcp = get_default_quality_control_parameters()
+
+
+
 #    Flag 1 == good data, Flag 0 == bad data. Notes indicate reason for bad data.
 print('\nScreening vial level data for poor quality...')
 vial['flag'] = np.ones(len(vial['id1']))
 vial['notes'] = ['' for i in vial['id1']]
 for i in range(len(vial['id1'])):
-    if vial['H2O']['std'][i] > vial_quality['max_H2O_std']:
+    if vial['H2O']['std'][i] > qcp['max_H2O_std']:
         # vial['flag'][i] = 0  # commented out because it is usually not justifiable to exclude based on this threshold
-        vial['notes'][i] += f"Vial {i+1} had high within vial H2O standard deviation (1 sigma = {round(vial['H2O']['std'][i], 0)}; threshold = {vial_quality['max_H2O_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial H2O standard deviation (1 sigma = {round(vial['H2O']['std'][i], 0)}; threshold = {qcp['max_H2O_std']})."
 
-    if vial['d18O']['std'][i] > vial_quality['max_d18O_std']:
+    if vial['d18O']['std'][i] > qcp['max_d18O_std']:
         vial['flag'][i] = 0
-        vial['notes'][i] += f"Vial {i+1} had high within vial d18O standard deviation (1 sigma = {round(vial['d18O']['std'][i], 3)}; threshold = {vial_quality['max_d18O_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial d18O standard deviation (1 sigma = {round(vial['d18O']['std'][i], 3)}; threshold = {qcp['max_d18O_std']})."
 
-    if vial['dD']['std'][i] > vial_quality['max_dD_std']:
+    if vial['dD']['std'][i] > qcp['max_dD_std']:
         vial['flag'][i] = 0
-        vial['notes'][i] += f"Vial {i+1} had high within vial dD standard deviation (1 sigma = {round(vial['dD']['std'][i], 3)}; threshold = {vial_quality['max_dD_std']})."
+        vial['notes'][i] += f"Vial {i+1} had high within vial dD standard deviation (1 sigma = {round(vial['dD']['std'][i], 3)}; threshold = {qcp['max_dD_std']})."
 
     if vial['vial_num'][i] in vials_without_injections:
         vial['flag'][i] = 0
@@ -443,10 +519,15 @@ else:
     salient_vial_data_list = ['inj_file', 'id1', 'time', 'vial_num', 'set_vial_num', 'h2o', 'h2o_std', 'dD_vsmow', 'dD_std', 'd18O_vsmow', 'd18O_std', 'dxs_vsmow', 'n_inj', 'flag', 'notes']
 
 
+# -------------------- Memory -------------------
+dDmemory = memory_calc('Delta_D_H')
+dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
+
+
 # -------------------- Get ready to make report -------------------
 # copy report files
 if os.path.exists(report_dir):
-    shutil.move(report_dir, os.path.join(run_dir, f"report_{int(dt.datetime.utcnow().timestamp())}"))
+    shutil.move(report_dir, os.path.join(archive_dir, f"report_{int(dt.datetime.utcnow().timestamp())}"))
 shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 [shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
@@ -644,16 +725,16 @@ ref_wat_block_str_2 = str([f"""<tr>
 
 ref_wat_block = ref_wat_block_str_1 + ref_wat_block_str_2
 
-data_quality_block_str_1 = str([f"""<tr><td>dD</td>
+data_quality_block_str_1 = str([f"""<tr><td>{i}</td><td>dD</td>
                                   <td>{round(np.std(dD_vsmow[eval(i.lower())['index']]) * 2, 3)}</td>
                                   <td>{round(np.mean(dD_vsmow[eval(i.lower())['index']])-eval(i.lower())['dD'], 3)}</td></tr>
-                              <tr><td>d18O</td>
+                              <tr><td>{i}</td><td>d18O</td>
                                   <td>{round(np.std(d18O_vsmow[eval(i.lower())['index']]) * 2, 3)}</td>
                                   <td>{round(np.mean(d18O_vsmow[eval(i.lower())['index']])-eval(i.lower())['d18O'], 3)}</td></tr>
                            """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 if instrument['O17_flag']:
-    data_quality_block_str_2 = str([f"""<tr><td>D17O</td>
+    data_quality_block_str_2 = str([f"""<tr><td>{i}</td><td>D17O</td>
                                       <td>{round(np.std(D17O_vsmow[eval(i.lower())['index']]) * 2, 1)}</td>
                                       <td>{round(np.mean(D17O_vsmow[eval(i.lower())['index']])-eval(i.lower())['D17O'], 3)}</td></tr>
                                """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
@@ -748,9 +829,23 @@ header = f"""
         <strong>two standard deviations</strong> over all replicates of the quality control reference water. Accuracy is the difference of the mean of all replicates of the
         quality control reference water from the accepted value.</p>
         <table>
-            <tr><th> </th><th>Precision</th><th>Accuracy</th></tr>
+            <tr><th> </th><th> </th><th>Precision</th><th>Accuracy</th></tr>
             {data_quality_block}
         </table>
+    </div>
+    <div class="text-indent"><h3>Memory / Carry-over</h3>
+    <p>This memory, or carry-over calculation attempts to estimate the proportion of water from the current injection
+    that is presently being measured. Some of the previously injected water is still present in the system. In this
+    calculation, a memory estimate of 0% would imply no carry-over at all and indicate that the only water presently
+    being measured is from the current injection. Memory estimates vary depending on the delta used. d18O tends to provide
+    a lower memory estimate compared with dD. As such, my default is to use the hydrogen isotope composition as a memory
+    estimate. Furthermore, this estimate seems to be only valid when the range is sufficiently large. This makes intuitive
+    sense because as the two waters become more similar, a memory estimate becomes more challenging to measure, and indeed,
+    less meaningful. I have placed a 10 permil difference threshold to cut off the erroneous estimates from those waters
+    with a less than 10 permil difference. Mathmatically, as the difference between the two waters goes to zero, the
+    proportion goes to zero.</p>
+
+    <p>The memory estimate from this run, based on dD, is <strong>{round(dDmemory['mean']*100, 1)}%</strong>.</p>
     </div>
 
     <h2>Figure thumbnails</h2>"""
@@ -819,3 +914,20 @@ webbrowser.open(log_summary_page)
 # -------------------- make zip of summary report --------------------
 shutil.make_archive('report', 'zip', os.path.join(report_dir))
 shutil.move('report.zip', os.path.join(report_dir, 'report.zip'))
+
+
+
+# -------------------- write data to log file --------------------
+print(f'\n    Write data to log file.')
+log_filename = f"{instrument['name'].lower()}_run_log.csv"
+log_file = os.path.join(project_dir, log_filename)
+memory_notes = input('Memory related notes: ')
+log_file_headers = ['inj_file', 'start_time', 'memory', 'notes']
+log_data = [inj_file[0], time[0], dDmemory['mean'], memory_notes]
+with open(log_file, 'w', newline='') as csvfile:
+    datawriter = csv.writer(csvfile, quoting=csv.QUOTE_MINIMAL)
+    datawriter.writerow(log_file_headers)
+    datawriter.writerow(log_data)
+
+
+
