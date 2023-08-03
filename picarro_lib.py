@@ -11,24 +11,41 @@ Version 1.4 adds a picarro_path.txt to save me time in moving the picarro_lib.py
 with all the different directory structures on different computers.
 
 Version 1.5 adds the ability to import data from an instrument that is not explicitly listed.
+
+Version 1.6 changes min_H2O to 5000 from 10000
+
+Version 1.7 has inj_peak, inj_quality, and vial_quality removed. These have been replaced by dictionaries in
+picarro_inj.py and picarro_vial.py files. Moved calc_mode() from picarro_inj.py to here so it is available to
+picarro_vial.py.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-03-24"
-__version__ = "1.5"
+__last_modified__ = "2023-07-24"
+__version__ = "1.7"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- imports --------------------
+import numpy as np
 import os
 import re
 import time as t
 
 
 # -------------------- functions --------------------
+def calc_mode(rd, rnd):
+    """Calculate the mode of a raw dataset rd after having rounded it to 
+    the nearest number of specified decimal places, rnd."""
+    rd = rd[~np.isnan(rd)]
+    d = [round(i, rnd) for i in rd]
+    v,c = np.unique(d, return_counts=True)
+    i = np.argmax(c)
+    return v[i]
+
+
 def get_path(desired_path):
     """Make your life easier with this section. These are the paths that seem to change depending on the computer we are working on."""
     picarro_path_file = os.path.join(os.getcwd(), 'picarro_path.txt')
@@ -103,23 +120,11 @@ def get_instrument():
                 'name': 'Abel',
                 'model': 'L2130i',
                 'O17_flag': False}
-            ref_ratios = {
+            instrument['ref_ratios'] = {
                 'rDHi': 0.1744,
                 'r1816i': 1.7540,
                 'notes': """Reference values are from Abel (an L2130i) 20220901 calibrated vial level data using KD.
                             np.mean(vial['peak3_offset']['mean'][kd['index']]/vial['peak2_offset']['mean'][kd['index']])"""}
-            inj_peak = {
-                'h2o_detection_limit': 5000,
-                'trim_from_start': 35,
-                'trim_from_end': 50}
-            inj_quality = {
-                'max_H2O_std': 1000,
-                'max_d18O_std': 1.0,
-                'max_dD_std': 2.0}
-            vial_quality = {
-                'max_H2O_std': 700,
-                'max_d18O_std': 0.33,
-                'max_dD_std': 1.33}
 
         elif entered_name == 'desoto':
             name_recognized = True
@@ -141,24 +146,11 @@ def get_instrument():
                 'name': 'Phoenix',
                 'model': 'L2140i',
                 'O17_flag': True}
-            ref_ratios = {
+            instrument['ref_ratios'] = {
                 'rDHi': 0.1509,
                 'r1816i': 1.6954,
                 'r1716i': 0.5854,
                 'r1816i_1v2': 0.9623}
-            inj_peak = {
-                'H2O_detection_limit': 5000,
-                'trim_from_start': 35,
-                'trim_from_end': 50}
-            inj_quality = {
-                'max_H2O_std': 2000,
-                'max_d18O_std': 1.0,
-                'max_d17O_std': 0.5,
-                'max_dD_std': 2.0}
-            vial_quality = {
-                'max_H2O_std': 400,
-                'max_d18O_std': 0.2,
-                'max_dD_std': 2.00}
 
         elif entered_name == 'not_listed':
             name_recognized = True
@@ -182,8 +174,8 @@ def get_instrument():
         else:
             print('\nInstrument not recognized.')
 
-        if 'ref_ratios' not in locals():
-            ref_ratios = {
+        if 'ref_ratios' not in instrument:
+            instrument['ref_ratios'] = {
                 'rDHi': 0.1500,
                 'r1816i': 1.7000,
                 'r1716i': 0.5900,
@@ -192,35 +184,8 @@ def get_instrument():
             print(' **** Using placeholder isotopic reference values that need to be updated to this specific instrument. ****')
             print(' ')
 
-        if 'inj_peak' not in locals():
-            inj_peak = {
-                'H2O_detection_limit': 5000,
-                'trim_from_start': 35,
-                'trim_from_end': 50}
-            print(' ')
-            print(' **** Using placeholder injection peak detection values that may need to be updated to this specific instrument. ****')
-            print(' ')
 
-        if 'inj_quality' not in locals():
-            inj_quality = {
-                'max_H2O_std': 1000,
-                'max_d18O_std': 1.0,
-                'max_dD_std': 2.0}
-            print(' ')
-            print(' **** Using placeholder injection quality values that may need to be updated to this specific instrument. ****')
-            print(' ')
-
-        # These additions to inj_quality are reasonable for all instruments
-        inj_quality['max_CAVITYPRESSURE_std'] = 0.056
-        inj_quality['min_H2O'] = 10000
-
-        if 'vial_quality' not in locals():
-            vial_quality = {
-                'max_H2O_std': 500,
-                'max_d18O_std': 0.1,
-                'max_dD_std': 1.00}
-
-    return instrument, ref_ratios, inj_peak, inj_quality, vial_quality
+    return instrument
 
 
 def make_file_list(directory, filetype):
@@ -270,5 +235,5 @@ def read_file(file_to_import, delim=None, header_row=1):
 
 # -------------------- python scripts --------------------
 python_dir = get_path("python")
-python_scripts = {'picarro_lib.py': '', 'picarro_h5.py': '', 'picarro_inj.py': '', 'picarro_vial.py': ""}
+python_scripts = {'picarro_lib.py': '', 'picarro_h5.py': '', 'picarro_inj.py': '', 'picarro_vial.py': ''}
 python_scripts = {key: (t.strftime('%Y-%m-%d %H:%M:%S', t.localtime(os.path.getmtime(f'{python_dir}{key}')))) for key, value in python_scripts.items()}
