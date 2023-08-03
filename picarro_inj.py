@@ -14,12 +14,14 @@ The short version is, the picarro vaporizer died and I took the opportunity to t
 very slowly into a hot tee. Turns out it works quite well. More on this later. Also in this version, and in an attempt to make a single
 script allow for many different types and sizes of injections, I have tried to make the peak detection settings (pds dictionary)
 more flexible. Version 1.51 corrects typo in figure legend.
+
+Version 1.6 from 2023-07-20 has the peak detection settings parameters, injection quality control, and file management reworked.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-06-24"
-__version__ = "1.51"
+__last_modified__ = "2023-07-24"
+__version__ = "1.6"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -44,19 +46,47 @@ import webbrowser
 
 
 # -------------------- functions ------------------------------------
-def calc_mode(rd, rnd):
-    """Calculate the mode of a raw dataset rd after having rounded it to 
-    the nearest number of specified decimal places, rnd."""
-    d = [round(i, rnd) for i in rd]
-    v,c = np.unique(d, return_counts=True)
-    i = np.argmax(c)
-    return v[i]
+
+def get_default_peak_detection_settings():
+    # get mode of H2O so we know where to center the H2O thresholds
+    #    - this assumes one injection size, still working on getting multiple injection sizes
+    H2Omode = calc_mode(H2O[H2O>1000], -1) # round to nearest 10s position
+    H2Omode_range = 10000
+    pds = {"H2O_threshold_min": H2Omode - H2Omode_range/2,
+           "H2O_threshold_max": H2Omode + H2Omode_range/2,
+           "dH2O_dT2_threshold": 50,
+           "kernel_size": 5,
+           "min_pts_in_pks": 70,
+           "min_pts_between_pks": 60,  # about 60 seconds between peaks
+           "trim_end": 5,
+           "trim_start": 5}
+
+    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', encoding='utf-8') as f:
+        json.dump(pds, f, ensure_ascii=False, indent=4)
+
+    return pds
+
+
+def get_default_quality_control_parameters():
+    qcp = {'max_H2O_std': round(calc_mode(inj['H2O']['std'], -1) * 3.3, 0),
+           'max_d18O_std': round(calc_mode(inj['d18O']['std'], 1) * 3.3, 2),
+           'max_dD_std': round(calc_mode(inj['dD']['std'], 1) * 3.3, 1),
+           'max_CAVITYPRESSURE_std': 0.056,
+           'min_H2O': 5000}
+
+    if instrument['O17_flag']:
+        qcp['max_d17O_std'] = round(calc_mode(inj['d17O']['std'], 1) * 3.3, 2)
+
+    with open(os.path.join(run_dir, 'quality_control_parameters_inj.json'), 'w', encoding='utf-8') as f:
+        json.dump(qcp, f, ensure_ascii=False, indent=4)
+
+    return qcp
 
 
 # -------------------- get instrument information --------------------
 """ Get specific picarro instrument whose data is being processed as well as some associated information. Populate
 this function with your own instrument(s). The function get_instrument() is located in picarro_lib.py."""
-instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
+instrument = get_instrument()
 
 
 # -------------------- paths --------------------
@@ -80,6 +110,18 @@ while identified_run == 0:
         print(f'\n    Processing run {run}...')
     else:
         print('\n** More than one run found. **\n')
+
+
+# -------------------- prepare run directory --------------------
+archive_dir = os.path.join(run_dir, 'archive/')
+if os.path.isdir(archive_dir) is False:
+    os.mkdir(archive_dir)
+
+shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), os.path.join(run_dir, 'py_style.css'))
+if os.path.isdir(os.path.join(archive_dir, 'python_archive')) is False:
+    os.mkdir(os.path.join(archive_dir, 'python_archive'))
+[shutil.copy2(os.path.join(python_dir, script), os.path.join(archive_dir, f"python_archive/{script}_ARCHIVE_COPY")) for script in python_scripts]
+
 
 
 # -------------------- identify hdf5 file --------------------
@@ -199,31 +241,37 @@ else:
 print('\n    Finding injection peaks.')
 
 
-# get mode of H2O so we know where to center the H2O thresholds
-#    - this assumes one injection size, still working on getting multiple injection sizes
-H2Omode = calc_mode(H2O[H2O>1000], -1) # round to nearest 10s position
-H2Omode_range = 10000
+# Peak detection settings may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+#    run, you may need to adjust the peak detection settings in order to salvage your data.
 
+# List of keys that are currently expected to be in the peak detection settings file. If they are different from this list, archive
+#    the file and make a new one.
+peak_detection_settings_keys = ["dH2O_dT2_threshold",
+                                "H2O_threshold_min",
+                                "H2O_threshold_max",
+                                "kernel_size",
+                                "min_pts_in_pks",
+                                "min_pts_between_pks",
+                                "trim_end",
+                                "trim_start"]
 
-# check for the existence of a settings file to grab custom peak detection settings
-if os.path.isfile(os.path.join(run_dir, 'peak_detection_settings.json')):
+# Check for the existence of a settings file to grab existing peak detection settings
+pds_file = os.path.join(run_dir, 'peak_detection_settings.json')
+if os.path.isfile(pds_file):
     existing_pds = True
-    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'r') as f:
+    with open(pds_file, 'r') as f:
         pds = json.load(f)
 
-else:
-    existing_pds = False
-    pds = {"H2O_threshold_min": H2Omode - H2Omode_range/2,
-           "H2O_threshold_max": H2Omode + H2Omode_range/2,
-           "dH2O_dT2_threshold": 50,
-           "kernel_size": 5,
-           "min_pts_in_pks": 70,
-           "min_pts_between_pks": 60,  # about 60 seconds between peaks
-           "trim_end": 5,
-           "trim_start": 5}
+    if set(pds.keys()).issubset(peak_detection_settings_keys) is False:
+        # archive existing file
+        shutil.copy2(pds_file, os.path.join(archive_dir, f"peak_detection_settings_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'peak_detection_settings')))}.json"))
+        pds = get_default_peak_detection_settings()
+        existing_pds = False
 
-    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', encoding='utf-8') as f:
-        json.dump(pds, f, ensure_ascii=False, indent=4)
+else:
+    pds = get_default_peak_detection_settings()
+    existing_pds = False
+
 
 time_diff = np.diff(time)
 time_diff = np.append(time_diff, np.mean(time_diff))
@@ -236,11 +284,6 @@ dH2O_dT_convolved = np.convolve(dH2O_dT, kernel, mode='same')
 dH2O_dT2 = np.diff(dH2O_dT_convolved)
 dH2O_dT2 = np.append(dH2O_dT2, dH2O_dT2[-1])
 dH2O_dT2_convolved = np.convolve(dH2O_dT2, kernel, mode='same')
-
-# update pds dictionary if one did not already exist
-if existing_pds is False:
-    pds['dH2O_dT2_threshold'] = np.std(dH2O_dT2_convolved)
-
 
 pks = np.where(np.logical_and(abs(dH2O_dT2_convolved) < pds['dH2O_dT2_threshold'], 
                               np.logical_and(H2O > pds['H2O_threshold_min'],
@@ -398,48 +441,71 @@ else:
     inj['inj_num'] = [list(range(1, ei + 1)) for ei in expected_inj]
     inj['inj_num'] = [x for xs in inj['inj_num'] for x in xs]
 
+
+
+
     # -------------------- quality control injections --------------------
-    inj_quality['max_H2O_std'] = round(calc_mode(inj['H2O']['std'], -1) * 3.3, 0)
-    inj_quality['max_d18O_std'] = round(calc_mode(inj['d18O']['std'], 1) * 3.3, 2)
-    inj_quality['max_dD_std'] = round(calc_mode(inj['dD']['std'], 1) * 3.3, 1)
-    
-    if inj_quality['max_H2O_std'] > 2000:
+    print('\n    Checking quality of injections.')
+
+
+    # Quality control injection parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+    #    run, you may need to adjust the injection quality control parameters in order to salvage your data.
+
+    # List of keys that are currently expected to be in the injection quality control parameters file. If they are different from this list, archive
+    #    the file and make a new one.
+    quality_control_parameters_inj_keys = ['max_H2O_std',
+                                           'max_d18O_std',
+                                           'max_dD_std',
+                                           'max_CAVITYPRESSURE_std',
+                                           'min_H2O']
+    if instrument['O17_flag']:
+        quality_control_parameters_inj_keys.append('max_d17O_std')
+
+    # Check for the existence of a settings file to grab existing peak detection settings
+    qcp_file = os.path.join(run_dir, 'quality_control_parameters_inj.json')
+    if os.path.isfile(qcp_file):
+        with open(qcp_file, 'r') as f:
+            qcp = json.load(f)
+
+        if set(qcp.keys()).issubset(quality_control_parameters_inj_keys) is False:
+            # archive existing file
+            shutil.copy2(qcp_file, os.path.join(archive_dir, f"quality_control_parameters_inj_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'quality_control_parameters_inj.json')))}.json"))
+            qcp = get_default_quality_control_parameters()
+
+    else:
+        qcp = get_default_quality_control_parameters()
+
+
+    if qcp['max_H2O_std'] > 2000:
         print(f" ** Check your injections, the H2O ppm seems noisier than normal.")
-    if inj_quality['max_d18O_std'] > 1.0:
+    if qcp['max_d18O_std'] > 1.0:
         print(f" ** Check your injections, the d18O seems noisier than normal.")
-    if inj_quality['max_dD_std'] > 2.0:
+    if qcp['max_dD_std'] > 2.0:
         print(f" ** Check your injections, the dD seems noisier than normal.")
-
-
-    # # used for all campcentury runs
-    # inj_quality['max_H2O_std'] = 5000
-    # inj_quality['max_d18O_std'] = 5
-    # inj_quality['max_dD_std'] = 5
-
 
     inj['flag'] = np.ones(len(inj['H2O']['mean']))
     inj['flag_reason'] = [' ' for i in inj['flag']]
     for i, _ in enumerate(inj['H2O']['std']):
-        if inj['H2O']['std'][i] > inj_quality['max_H2O_std']:
+        if inj['H2O']['std'][i] > qcp['max_H2O_std']:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'above max_H2O_std'
-            print(f"\n    Injection {i} had high H2O standard deviation ({round(inj['H2O']['std'][i], 0)} ppm). Threshold is {inj_quality['max_H2O_std']} ppm.")
-        elif inj['d18O']['std'][i] > inj_quality['max_d18O_std']:
+            print(f"\n    Injection {i} had high H2O standard deviation ({round(inj['H2O']['std'][i], 0)} ppm). Threshold is {qcp['max_H2O_std']} ppm.")
+        elif inj['d18O']['std'][i] > qcp['max_d18O_std']:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'above max_d18O_std'
-            print(f"\n    Injection {i} had high d18O standard deviation ({round(inj['d18O']['std'][i], 3)} permil). Threshold is {inj_quality['max_d18O_std']} permil.")
-        elif inj['dD']['std'][i] > inj_quality['max_dD_std']:
+            print(f"\n    Injection {i} had high d18O standard deviation ({round(inj['d18O']['std'][i], 3)} permil). Threshold is {qcp['max_d18O_std']} permil.")
+        elif inj['dD']['std'][i] > qcp['max_dD_std']:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'above max_dD_std'
-            print(f"\n    Injection {i} had high dD standard deviation ({round(inj['dD']['std'][i], 3)} permil). Threshold is {inj_quality['max_dD_std']} permil.")
-        elif inj['H2O']['mean'][i] < inj_quality['min_H2O']:
+            print(f"\n    Injection {i} had high dD standard deviation ({round(inj['dD']['std'][i], 3)} permil). Threshold is {qcp['max_dD_std']} permil.")
+        elif inj['H2O']['mean'][i] < qcp['min_H2O']:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'below min_H2O'
-            print(f"\n    Injection {i} had low water concentration ({round(inj['H2O']['mean'][i], 0)} ppmv). Threshold is {inj_quality['min_H2O']} ppmv.")
-        elif inj['CavityPressure']['std'][i] > inj_quality['max_CAVITYPRESSURE_std']:
+            print(f"\n    Injection {i} had low water concentration ({round(inj['H2O']['mean'][i], 0)} ppmv). Threshold is {qcp['min_H2O']} ppmv.")
+        elif inj['CavityPressure']['std'][i] > qcp['max_CAVITYPRESSURE_std']:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'above max_CAVITYPRESSURE_std'
-            print(f"\n    Injection {i} had high cavity pressure standard deviation ({round(inj['CavityPressure']['std'][i],3)} Torr). Threshold is {inj_quality['max_CAVITYPRESSURE_std']} Torr.")
+            print(f"\n    Injection {i} had high cavity pressure standard deviation ({round(inj['CavityPressure']['std'][i],3)} Torr). Threshold is {qcp['max_CAVITYPRESSURE_std']} Torr.")
     fdi = np.concatenate([inj_gdi[i] for i in np.where(inj['flag'] == 0)[0]]).ravel()
     flagged_reason = [inj['flag_reason'][i] for i in np.where(inj['flag'] == 0)[0]]
     flagged_id1 = [inj['id1'][i] for i in np.where(inj['flag'] == 0)[0]]
@@ -460,27 +526,22 @@ else:
     fig2.circle(gdi, CavityPressure[gdi], color="green", legend_label="Good data", size=6)
     fig2.circle(fdi, CavityPressure[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig2_caption = f"""Figure 2. Cavity pressure is carefully controlled. Injections with a standard deviation
-                       greater than {inj_quality['max_CAVITYPRESSURE_std']} Torr are <a href="#flagged_injections">flagged</a>."""
+                       greater than {qcp['max_CAVITYPRESSURE_std']} Torr are <a href="#flagged_injections">flagged</a>."""
 
     fig3 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="dD raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig3.circle(adi, dD, color="black", legend_label="All data", size=2)
     fig3.circle(gdi, dD[gdi], color="green", legend_label="Good data", size=6)
     fig3.circle(fdi, dD[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig3_caption = f"""Figure 3. Hydrogen isotope composition (dD or delta Dee). Injections with a standard
-                       deviation greater than {inj_quality['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
+                       deviation greater than {qcp['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig4.circle(adi, d18O, color="black", legend_label="All data", size=2)
     fig4.circle(gdi, d18O[gdi], color="green", legend_label="Good data", size=6)
     fig4.circle(fdi, d18O[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig4_caption = f"""Figure 3. Oxygen-18 isotope composition (d18O or delta 18 Oh). Injections with a standard
-                       deviation greater than {inj_quality['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
+                       deviation greater than {qcp['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
-    # -------------------- prepare run directory --------------------
-    shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), os.path.join(run_dir, 'py_style.css'))
-    if os.path.isdir(os.path.join(run_dir, 'python_archive')) is False:
-        os.mkdir(os.path.join(run_dir, 'python_archive'))
-    [shutil.copy2(os.path.join(python_dir, script), os.path.join(run_dir, f"python_archive/{script}_ARCHIVE_COPY")) for script in python_scripts]
 
     # -------------------- make html page --------------------
     print('Making html page...')
