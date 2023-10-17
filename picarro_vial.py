@@ -9,12 +9,13 @@ Version 1.4 mod date 2023-05-07 => found bug when a reference water had a null v
 Version 1.41 mod date 2023.05.30 => minor change of "water" to "waters" with respect to the reference materials json file. I
     updated the refmat file for broader reach.
 Version 1.5 mod date 2023.06.28 => added tray description file to report directory and report
-Version 1.6 mod date 2023.06.28 => added memory calculation
+Version 1.6 mod date 2023.08.01 => added memory calculation
+Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering analyses as a set, fix is creating combined injection array for deltas
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-08-01"
+__last_modified__ = "2023-10-17"
 __version__ = "1.6"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
@@ -83,14 +84,25 @@ def memory_calc(delta):
         'vial_to_vial_range': np.zeros(len(vial['vial_num'])),
         'within_vial_range': np.zeros(len(vial['vial_num'])),
         'vial_memory': np.zeros(len(vial['vial_num']))}
-    for i in vial['vial_num']:
+    n=0
+    for i in range(len(vial['vial_num'])):
         # get index of all injections for the current (v1) and previous (v0) vials
-        v1 = np.asarray(range(int(i*vial['total_inj'][i-1] - vial['total_inj'][i-1]), int(i*vial['total_inj'][i-1])), dtype='int')
-        v0 = np.array(v1 - vial['total_inj'][i-1], dtype='int')
-        memory['vial_to_vial_range'][i-1] = np.abs(np.mean(np.asarray(inj[delta]['mean'])[v1][-2:]) - np.mean(np.asarray(inj[delta]['mean'])[v0][-2:]))
-        memory['within_vial_range'][i-1] = np.abs(np.asarray(inj[delta]['mean'])[v1][0] - np.mean(np.asarray(inj[delta]['mean'])[v1][-2:]))
-        memory['vial_memory'][i-1] = 1 - ((memory['vial_to_vial_range'][i-1] - memory['within_vial_range'][i-1]) / memory['vial_to_vial_range'][i-1])
-        memory['mean'] = np.mean(memory['vial_memory'][np.where(memory['vial_to_vial_range']>10)])
+        if i==0:
+            pass
+        else:
+            v0_injs = int(vial['total_inj'][i-1])
+            v0 = np.asarray(range(n, n + v0_injs))
+            v1_injs = int(vial['total_inj'][i])
+            v1 = np.asarray(range(n + v0_injs, n + v0_injs + v1_injs))
+            memory['vial_to_vial_range'][i] = np.abs(np.mean(np.asarray(delta)[v1][-2:]) - np.mean(np.asarray(delta)[v0][-2:]))
+            memory['within_vial_range'][i] = np.abs(np.asarray(delta)[v1][0] - np.mean(np.asarray(delta)[v1][-2:]))
+            memory['vial_memory'][i] = 1 - ((memory['vial_to_vial_range'][i] - memory['within_vial_range'][i]) / memory['vial_to_vial_range'][i])
+            memory['mean'] = np.mean(memory['vial_memory'][np.where(memory['vial_to_vial_range']>10)])
+            # fig, ax = pplt.subplots()
+            # ax.plot(v0, np.asarray(inj[delta]['mean'])[v0], 'ro')
+            # ax.plot(v1, np.asarray(inj[delta]['mean'])[v1], 'bo')
+            # pplt.show()
+            n+=(v0_injs)
 
     return memory
 
@@ -169,6 +181,7 @@ inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_sl
                   'project', 'id1', 'inj_num', 'flag', 'vial_num', 'flag_reason']
 
 
+dD_for_memory = np.empty(0)
 total_vials = 0
 for inj_file in inj_file_list:
     # read in injections file(s)
@@ -195,6 +208,8 @@ for inj_file in inj_file_list:
             globals()[key] = np.asarray(inj[key]['mean'])
         else:
             globals()[key] = np.asarray(inj[key])
+
+    dD_for_memory = np.append(dD_for_memory, inj['Delta_D_H']['mean'])
 
     # -------------------- summarize vial level data --------------------
     vial_set = list(set(inj['vial_num']))
@@ -225,6 +240,8 @@ for inj_file in inj_file_list:
     vial['n_inj'] = np.append(vial['n_inj'], [np.size(time[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
     vial['n_high_res'] = np.append(vial['n_high_res'], [np.sum(n_high_res[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
     vial['inj_file'] = np.append(vial['inj_file'], ([inj_file for i in vial_set]))
+
+
 
 vial['set_vial_num'] = np.asarray(list(range(1, len(vial['id1']) + 1)))
 
@@ -520,7 +537,7 @@ else:
 
 
 # -------------------- Memory -------------------
-dDmemory = memory_calc('Delta_D_H')
+dDmemory = memory_calc(dD_for_memory)
 dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
 
 
@@ -921,7 +938,7 @@ shutil.move('report.zip', os.path.join(report_dir, 'report.zip'))
 print(f'\n    Write data to log file.')
 log_filename = f"{instrument['name'].lower()}_run_log.csv"
 log_file = os.path.join(project_dir, log_filename)
-memory_notes = input('Memory related notes: ')
+memory_notes = inj_file_list[0]
 log_file_headers = ['inj_file', 'start_time', 'memory', 'notes']
 log_data = [inj_file[0], time[0], dDmemory['mean'], memory_notes]
 with open(log_file, 'w', newline='') as csvfile:
