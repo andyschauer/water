@@ -178,7 +178,7 @@ def get_instrument():
             instrument['ref_ratios'] = {
                 'rDHi': 0.1500,
                 'r1816i': 1.7000,
-                'r1716i': 0.5900,
+                    'r1716i': 0.5900,
                 'r1816i_1v2': 0.9600}
             print(' ')
             print(' **** Using placeholder isotopic reference values that need to be updated to this specific instrument. ****')

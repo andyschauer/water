@@ -11,12 +11,13 @@ Version 1.41 mod date 2023.05.30 => minor change of "water" to "waters" with res
 Version 1.5 mod date 2023.06.28 => added tray description file to report directory and report
 Version 1.6 mod date 2023.08.01 => added memory calculation
 Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering analyses as a set, fix is creating combined injection array for deltas
+Version 1.7 mod date 2023.11.28 => removed project from data stream
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-10-17"
-__version__ = "1.6"
+__last_modified__ = "2023-11-28"
+__version__ = "1.7"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -55,12 +56,18 @@ def fig_in_html(fhp, figname, caption):
 
 
 def get_default_quality_control_parameters():
-    qcp = {'max_H2O_std': round(calc_mode(vial['H2O']['std'], -1) * 3.3, 0),
-           'max_d18O_std': round(calc_mode(vial['d18O']['std'], 2) * 3.3, 3),
-           'max_dD_std': round(calc_mode(vial['dD']['std'], 2) * 3.3, 2)}
+    # qcp = {'max_H2O_std': round(calc_mode(vial['H2O']['std'], -1) * 4.4, 0),
+    #        'max_d18O_std': round(calc_mode(vial['d18O']['std'], 2) * 4.4, 3),
+    #        'max_dD_std': round(calc_mode(vial['dD']['std'], 2) * 4.4, 2)}
+
+    # if instrument['O17_flag']:
+    #     qcp['max_d17O_std'] = round(calc_mode(vial['d17O']['std'], 2) * 4.4, 3)
+    qcp = {'max_H2O_std': round(np.nanmean(vial['H2O']['std']) * 4.4, 0),
+           'max_d18O_std': round(np.nanmean(vial['d18O']['std']) * 4.4, 3),
+           'max_dD_std': round(np.nanmean(vial['dD']['std']) * 4.4, 2)}
 
     if instrument['O17_flag']:
-        qcp['max_d17O_std'] = round(calc_mode(vial['d17O']['std'], 2) * 3.3, 3)
+        qcp['max_d17O_std'] = round(np.nanmean(vial['d17O']['std']) * 4.4, 3)
 
     with open(os.path.join(run_dir, 'quality_control_parameters_vial.json'), 'w', encoding='utf-8') as f:
         json.dump(qcp, f, ensure_ascii=False, indent=4)
@@ -178,7 +185,7 @@ if run_or_set == 'run':
 
 # -------------------- Load injection level data from json data file(s) and summarize to vial level data --------------------
 inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope',
-                  'project', 'id1', 'inj_num', 'flag', 'vial_num', 'flag_reason']
+                  'id1', 'inj_num', 'flag', 'vial_num', 'flag_reason']
 
 
 dD_for_memory = np.empty(0)
@@ -187,6 +194,9 @@ for inj_file in inj_file_list:
     # read in injections file(s)
     with open(os.path.join(run_dir, inj_file), 'r') as jdf:
         inj = json.load(jdf)
+        
+        if 'project' in inj.keys():
+            del inj['project']
 
     if 'timestamp' not in locals() or 'timestamp' not in globals():  # if this is the first injection file, create vial dictionary and keys
         vial = {}
@@ -217,7 +227,7 @@ for inj_file in inj_file_list:
     vials_without_injections = []
     
     for i in vial_set:
-        curr_indices = np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
+        curr_indices = np.where((vial_num == i) & (flag >= 0) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
         for key in inj.keys():
             if key == 'vial_num':
                 vial[key] = np.append(vial[key], i)
@@ -234,7 +244,6 @@ for inj_file in inj_file_list:
     
     vials_without_injections = list(set(vials_without_injections))
 
-    vial['project'] = np.append(vial['project'], project[np.where(inj_num == 1)[0]])
     vial['id1'] = np.append(vial['id1'], id1[np.where(inj_num == 1)[0]])
     vial['total_inj'] = np.append(vial['total_inj'], [np.size(time[np.where((vial_num == i))[0]]) for i in vial_set])
     vial['n_inj'] = np.append(vial['n_inj'], [np.size(time[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
@@ -315,7 +324,7 @@ vial['notes'] = np.asarray(vial['notes'])
 
 # -------------------- Remove superfluous vial keys and sort based on time --------------------
 remove_from_vial_dict = ['inj_num', 'flag_reason', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
-vial_extra_list = ['project', 'id1', 'flag', 'n_inj', 'notes', 'vial_num', 'inj_file', 'set_vial_num', 'total_inj', 'n_high_res']
+vial_extra_list = ['id1', 'flag', 'n_inj', 'notes', 'vial_num', 'inj_file', 'set_vial_num', 'total_inj', 'n_high_res']
 
 for i in remove_from_vial_dict:
     if i in vial.keys():
@@ -351,11 +360,12 @@ vial_index_all = np.asarray(vial['vial_num']) - 1
 ref_wat = {'vial_index': np.empty(0, dtype="int16"),
            'id1': []}
 for i in range(len(vial['id1'])):
-    for j, k in refmat['waters'].items():
-        if vial['id1'][i].lower() == k['name'].lower() and vial['flag'][i] == 1:
-            ref_wat['id1'].append(vial['id1'][i])
-            k['index'] = np.append(k['index'], int(i))
-            ref_wat['vial_index'] = np.append(ref_wat['vial_index'], int(i))
+    if vial['n_inj'][i]>0:
+        for j, k in refmat['waters'].items():
+            if vial['id1'][i].lower() == k['name'].lower() and vial['flag'][i] == 1:
+                ref_wat['id1'].append(vial['id1'][i])
+                k['index'] = np.append(k['index'], int(i))
+                ref_wat['vial_index'] = np.append(ref_wat['vial_index'], int(i))
 
 
 # -------------------- Vials containing conditioning waters --------------------
@@ -364,29 +374,9 @@ vial_index_flag0 = np.setdiff1d(vial_index_flag0, vial_index_cndtnr)
 
 
 # -------------------- Vials containing sample waters --------------------
-included_projects = list(set(vial['project']))
-identified_project = 0
-if len(included_projects) > 1:
-    print("\nList of included projects:")
-    [print(f"    {i}") for i in included_projects]
-    while identified_project == 0:
-        project_search = input('Enter the project you wish to create a report for: ')
-        isproj = [project_search[0: len(project_search)] in x for x in included_projects]
-        if len(np.where(isproj)[0]) == 1:
-            identified_project = 1
-            project = included_projects[np.where(isproj)[0][0]]
-            print(f'    Processing project {project}...')
-        else:
-            print('\n** More than one project found. **\n')
-else:
-    project = included_projects[0]
-
-vial_index_project = [i for i in range(len(vial['project'])) if project == vial['project'][i]]
-
 vial_index_sam = np.setdiff1d(vial_index_all, ref_wat['vial_index'])
 vial_index_sam = np.setdiff1d(vial_index_sam, vial_index_flag0)
 vial_index_sam = np.setdiff1d(vial_index_sam, vial_index_cndtnr)
-vial_index_sam = np.intersect1d(vial_index_sam, vial_index_project)
 
 if len(vial_index_sam) > 0:
     sam_flag = True
@@ -403,7 +393,7 @@ if instrument['O17_flag']:
     ref_wat['d17O_resid_raw'] = np.empty(0)
 
 for i in ref_wat['id1_set']:
-    i = i.lower()
+    i = i.upper()
     eval(i)['dD_resid_raw'] = vial['dD']['mean'][eval(i)['index']] - np.mean(vial['dD']['mean'][eval(i)['index']])
     ref_wat['dD_resid_raw'] = np.append(ref_wat['dD_resid_raw'], eval(i)['dD_resid_raw'])
     eval(i)['d18O_resid_raw'] = vial['d18O']['mean'][eval(i)['index']] - np.mean(vial['d18O']['mean'][eval(i)['index']])
@@ -450,28 +440,29 @@ else:
     ref_wat['chosen'] = [i.strip() for i in ref_wat['chosen']]
 ref_wat['qaqc'] = list(np.setdiff1d(ref_wat['id1_set'], ref_wat['chosen']))
 
-ref_wat['dDacc'] = [eval(i.lower())['dD'] for i in ref_wat['chosen']]
-ref_wat['dDmeas'] = [np.mean(vial['dD_drift_corr'][eval(i.lower())['index']]) for i in ref_wat['chosen']]
+ref_wat['dDacc'] = [eval(i.upper())['dD'] for i in ref_wat['chosen']]
+ref_wat['dDmeas'] = [np.nanmean(vial['dD_drift_corr'][eval(i.upper())['index']]) for i in ref_wat['chosen']]
 ref_wat['dD_fit'] = np.polyfit(ref_wat['dDmeas'], ref_wat['dDacc'], 1)
 vial['dD_vsmow'] = np.asarray(ref_wat['dD_fit'][0] * vial['dD_drift_corr'] + ref_wat['dD_fit'][1])
 
-ref_wat['d18Oacc'] = [eval(i.lower())['d18O'] for i in ref_wat['chosen']]
-ref_wat['d18Omeas'] = [np.mean(vial['d18O_drift_corr'][eval(i.lower())['index']]) for i in ref_wat['chosen']]
+ref_wat['d18Oacc'] = [eval(i.upper())['d18O'] for i in ref_wat['chosen']]
+ref_wat['d18Omeas'] = [np.nanmean(vial['d18O_drift_corr'][eval(i.upper())['index']]) for i in ref_wat['chosen']]
 ref_wat['d18O_fit'] = np.polyfit(ref_wat['d18Omeas'], ref_wat['d18Oacc'], 1)
 vial['d18O_vsmow'] = np.asarray(ref_wat['d18O_fit'][0] * vial['d18O_drift_corr'] + ref_wat['d18O_fit'][1])
 
 vial['dxs_vsmow'] = np.asarray(vial['dD_vsmow'] - 8 * vial['d18O_vsmow'])
 
 if sam_flag:
-    dD_v_d18_fit = np.polyfit(vial['d18O_vsmow'][vial_index_sam], vial['dD_vsmow'][vial_index_sam], 1)
+    idx = np.isfinite(vial['d18O_vsmow'][vial_index_sam[0:-1]]) & np.isfinite(vial['dD_vsmow'][vial_index_sam[0:-1]])
+    dD_v_d18_fit = np.polyfit(vial['d18O_vsmow'][vial_index_sam[0:-1]][idx], vial['dD_vsmow'][vial_index_sam[0:-1]][idx], 1)
     dD_v_d18_fit_str = 'samples'
 else:
     dD_v_d18_fit = np.polyfit(vial['d18O_vsmow'], vial['dD_vsmow'], 1)
     dD_v_d18_fit_str = 'analyses'
 
 if instrument['O17_flag']:
-    ref_wat['d17Oacc'] = [(np.exp(eval(i.lower())['D17O'] / 10**6 + 0.528 * np.log(eval(i.lower())['d18O'] / 1000 + 1)) - 1) * 1000 for i in ref_wat['chosen']]  # equation 9 in Schoenemann et al 2013
-    ref_wat['d17Omeas'] = [np.mean(vial['d17O_drift_corr'][eval(i.lower())['index']]) for i in ref_wat['chosen']]
+    ref_wat['d17Oacc'] = [(np.exp(eval(i.upper())['D17O'] / 10**6 + 0.528 * np.log(eval(i.upper())['d18O'] / 1000 + 1)) - 1) * 1000 for i in ref_wat['chosen']]  # equation 9 in Schoenemann et al 2013
+    ref_wat['d17Omeas'] = [np.nanmean(vial['d17O_drift_corr'][eval(i.upper())['index']]) for i in ref_wat['chosen']]
     ref_wat['d17O_fit'] = np.polyfit(ref_wat['d17Omeas'], ref_wat['d17Oacc'], 1)
     vial['d17O_vsmow'] = np.asarray(ref_wat['d17O_fit'][0] * vial['d17O_drift_corr'] + ref_wat['d17O_fit'][1])
 
@@ -481,7 +472,8 @@ if instrument['O17_flag']:
     vial['d18O_vsmow_prime'] = np.asarray(np.log(vial['d18O_vsmow'] / 1000 + 1))
 
     if sam_flag:
-        d17_v_d18_fit = np.polyfit(vial['d18O_vsmow_prime'][vial_index_sam], vial['d17O_vsmow_prime'][vial_index_sam], 1)
+        idx = np.isfinite(vial['d18O_vsmow_prime'][vial_index_sam[0:-1]]) & np.isfinite(vial['d17O_vsmow_prime'][vial_index_sam[0:-1]])
+        d17_v_d18_fit = np.polyfit(vial['d18O_vsmow_prime'][vial_index_sam[0:-1]][idx], vial['d17O_vsmow_prime'][vial_index_sam[0:-1]][idx], 1)
         d17_v_d18_fit_str = 'samples'
     else:
         d17_v_d18_fit = np.polyfit(vial['d18O_vsmow_prime'], vial['d17O_vsmow_prime'], 1)
@@ -497,7 +489,7 @@ if instrument['O17_flag']:
     ref_wat['d17O_resid_vsmow'] = np.empty(0)
 
 for i in ref_wat['id1_set']:
-    i = i.lower()
+    i = i.upper()
     eval(i)['dD_resid_vsmow'] = vial['dD_vsmow'][eval(i)['index']] - np.mean(vial['dD_vsmow'][eval(i)['index']])
     ref_wat['dD_resid_vsmow'] = np.append(ref_wat['dD_resid_vsmow'], eval(i)['dD_resid_vsmow'])
     eval(i)['d18O_resid_vsmow'] = vial['d18O_vsmow'][eval(i)['index']] - np.mean(vial['d18O_vsmow'][eval(i)['index']])
@@ -571,9 +563,9 @@ fig, ax = pplt.subplots(figsize=(6, 3), dpi=200, tight_layout=True)
 ax.errorbar(vial_num[vial_index_sam], h2o[vial_index_sam], yerr=h2o_std[vial_index_sam], label='samples', marker='.', markeredgecolor='black', markerfacecolor='black', ecolor='black', ls='None')
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = vial['vial_num'][eval(i.lower())['index']]
-    y = vial['H2O']['mean'][eval(i.lower())['index']]
-    ax.errorbar(x, y, yerr=vial['H2O']['std'][eval(i.lower())['index']], marker='o', markeredgecolor='black', c=ref_wat['marker_colors'][j], label=i, ls='None')
+    x = vial['vial_num'][eval(i.upper())['index']]
+    y = vial['H2O']['mean'][eval(i.upper())['index']]
+    ax.errorbar(x, y, yerr=vial['H2O']['std'][eval(i.upper())['index']], marker='o', markeredgecolor='black', c=ref_wat['marker_colors'][j], label=i, ls='None')
 ax.set_xlabel('Vial number')
 ax.set_ylabel('H2O (ppmv)')
 handles, labels = ax.get_legend_handles_labels()
@@ -591,13 +583,13 @@ figname = f'Fig{str(fig_num)}_dDresid_vs_vial.png'
 fig, ax = pplt.subplots(figsize=(6, 3), dpi=200, tight_layout=True)
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = vial['vial_num'][eval(i.lower())['index']]
-    y = eval(i.lower())['dD_resid_raw']
+    x = vial['vial_num'][eval(i.upper())['index']]
+    y = eval(i.upper())['dD_resid_raw']
     ax.plot(x, y, 'o', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=4, label=i + '_raw')
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = vial['vial_num'][eval(i.lower())['index']]
-    y = eval(i.lower())['dD_resid_vsmow']
+    x = vial['vial_num'][eval(i.upper())['index']]
+    y = eval(i.upper())['dD_resid_vsmow']
     ax.plot(x, y, 'v', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=8, label=i + '_vsmow')
 ax.set_xlabel('Vial number')
 ax.set_ylabel('dD residual (permil)')
@@ -615,13 +607,13 @@ if instrument['O17_flag']:
     fig, ax = pplt.subplots(figsize=(6, 3), dpi=200, tight_layout=True)
     for j in range(len(ref_wat['id1_set'])):
         i = ref_wat['id1_set'][j]
-        x = vial['vial_num'][eval(i.lower())['index']]
-        y = eval(i.lower())['d17O_resid_raw']
+        x = vial['vial_num'][eval(i.upper())['index']]
+        y = eval(i.upper())['d17O_resid_raw']
         ax.plot(x, y, 'o', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=4, label=i + '_raw')
     for j in range(len(ref_wat['id1_set'])):
         i = ref_wat['id1_set'][j]
-        x = vial['vial_num'][eval(i.lower())['index']]
-        y = eval(i.lower())['d17O_resid_vsmow']
+        x = vial['vial_num'][eval(i.upper())['index']]
+        y = eval(i.upper())['d17O_resid_vsmow']
         ax.plot(x, y, 'v', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=8, label=i + '_vsmow')
     ax.set_xlabel('Vial number')
     ax.set_ylabel('d17O residual (permil)')
@@ -638,13 +630,13 @@ figname = f'Fig{str(fig_num)}_d18Oresid_vs_vial.png'
 fig, ax = pplt.subplots(figsize=(6, 3), dpi=200, tight_layout=True)
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = vial['vial_num'][eval(i.lower())['index']]
-    y = eval(i.lower())['d18O_resid_raw']
+    x = vial['vial_num'][eval(i.upper())['index']]
+    y = eval(i.upper())['d18O_resid_raw']
     ax.plot(x, y, 'o', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=4, label=i + '_raw')
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = vial['vial_num'][eval(i.lower())['index']]
-    y = eval(i.lower())['d18O_resid_vsmow']
+    x = vial['vial_num'][eval(i.upper())['index']]
+    y = eval(i.upper())['d18O_resid_vsmow']
     ax.plot(x, y, 'v', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=8, label=i + '_vsmow')
 ax.set_xlabel('Vial number')
 ax.set_ylabel('d18O residual (permil)')
@@ -667,8 +659,8 @@ fig, ax = pplt.subplots(figsize=(6, 3), dpi=200, tight_layout=True)
 ax.plot(d18O_vsmow[vial_index_sam], dD_vsmow[vial_index_sam], 'k.', label='Samples')
 for j in range(len(ref_wat['id1_set'])):
     i = ref_wat['id1_set'][j]
-    x = d18O_vsmow[eval(i.lower())['index']]
-    y = dD_vsmow[eval(i.lower())['index']]
+    x = d18O_vsmow[eval(i.upper())['index']]
+    y = dD_vsmow[eval(i.upper())['index']]
     ax.plot(x, y, 'o', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=8, label=i)
 ax.set_xlabel('d18O vs VSMOW (permil)')
 ax.set_ylabel('dD vs VSMOW (permil)')
@@ -687,8 +679,8 @@ if instrument['O17_flag']:
     ax.plot(d18O_vsmow_prime[vial_index_sam], d17O_vsmow_prime[vial_index_sam], 'k.', label='Samples')
     for j in range(len(ref_wat['id1_set'])):
         i = ref_wat['id1_set'][j]
-        x = d18O_vsmow_prime[eval(i.lower())['index']]
-        y = d17O_vsmow_prime[eval(i.lower())['index']]
+        x = d18O_vsmow_prime[eval(i.upper())['index']]
+        y = d17O_vsmow_prime[eval(i.upper())['index']]
         ax.plot(x, y, 'o', markeredgecolor='black', c=ref_wat['marker_colors'][j], markersize=8, label=i)
     ax.set_xlabel('d18Oprime vs VSMOW')
     ax.set_ylabel('d17Oprime vs VSMOW')
@@ -727,33 +719,33 @@ with open(summary_data_file, 'w', newline='') as csvfile:
 # -------------------- make html summary report --------------------
 ref_wat_block_str_1 = str([f"""<tr>
                              <td>{i}</td>
-                             <td>{eval(i.lower())['dD']}</td>
-                             <td>{eval(i.lower())['d18O']}</td>
-                             <td>{eval(i.lower())['D17O']}</td>
+                             <td>{eval(i.upper())['dD']}</td>
+                             <td>{eval(i.upper())['d18O']}</td>
+                             <td>{eval(i.upper())['D17O']}</td>
                              <td>normalization to VSMOW-SLAP</td>
                          </tr>""" for i in ref_wat['chosen']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 ref_wat_block_str_2 = str([f"""<tr>
                              <td>{i}</td>
-                             <td>{eval(i.lower())['dD']}</td>
-                             <td>{eval(i.lower())['d18O']}</td>
-                             <td>{eval(i.lower())['D17O']}</td>
+                             <td>{eval(i.upper())['dD']}</td>
+                             <td>{eval(i.upper())['d18O']}</td>
+                             <td>{eval(i.upper())['D17O']}</td>
                              <td>quality assurance / quality control</td>
                          </tr>""" for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 ref_wat_block = ref_wat_block_str_1 + ref_wat_block_str_2
 
 data_quality_block_str_1 = str([f"""<tr><td>{i}</td><td>dD</td>
-                                  <td>{round(np.std(dD_vsmow[eval(i.lower())['index']]) * 2, 3)}</td>
-                                  <td>{round(np.mean(dD_vsmow[eval(i.lower())['index']])-eval(i.lower())['dD'], 3)}</td></tr>
+                                  <td>{round(np.std(dD_vsmow[eval(i.upper())['index']]) * 2, 3)}</td>
+                                  <td>{round(np.mean(dD_vsmow[eval(i.upper())['index']])-eval(i.upper())['dD'], 3)}</td></tr>
                               <tr><td>{i}</td><td>d18O</td>
-                                  <td>{round(np.std(d18O_vsmow[eval(i.lower())['index']]) * 2, 3)}</td>
-                                  <td>{round(np.mean(d18O_vsmow[eval(i.lower())['index']])-eval(i.lower())['d18O'], 3)}</td></tr>
+                                  <td>{round(np.std(d18O_vsmow[eval(i.upper())['index']]) * 2, 3)}</td>
+                                  <td>{round(np.mean(d18O_vsmow[eval(i.upper())['index']])-eval(i.upper())['d18O'], 3)}</td></tr>
                            """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 if instrument['O17_flag']:
     data_quality_block_str_2 = str([f"""<tr><td>{i}</td><td>D17O</td>
-                                      <td>{round(np.std(D17O_vsmow[eval(i.lower())['index']]) * 2, 1)}</td>
-                                      <td>{round(np.mean(D17O_vsmow[eval(i.lower())['index']])-eval(i.lower())['D17O'], 3)}</td></tr>
+                                      <td>{round(np.std(D17O_vsmow[eval(i.upper())['index']]) * 2, 1)}</td>
+                                      <td>{round(np.mean(D17O_vsmow[eval(i.upper())['index']])-eval(i.upper())['D17O'], 3)}</td></tr>
                                """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 if instrument['O17_flag']:
@@ -842,7 +834,7 @@ header = f"""
     </div>
 
     <h2>Data quality</h2>
-    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].lower())['name']}. Precision is
+    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].upper())['name']}. Precision is
         <strong>two standard deviations</strong> over all replicates of the quality control reference water. Accuracy is the difference of the mean of all replicates of the
         quality control reference water from the accepted value.</p>
         <table>

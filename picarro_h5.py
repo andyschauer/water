@@ -62,7 +62,7 @@ stop_date = args.stopdate
 # -------------------- get instrument information --------------------
 """ Get specific picarro instrument whose data is being processed as well as some associated information. Populate
 this function with your own instrument(s). The function get_instrument() is located in picarro_lib.py."""
-instrument, ref_ratios, inj_peak, inj_quality, vial_quality = get_instrument()
+instrument = get_instrument()
 
 
 # -------------------- paths --------------------
@@ -169,6 +169,7 @@ ax_bottom = pplt.subplot(212)
 ax_bottom.set_xlabel('h5_data point index')
 ax_bottom.set_ylabel('dD (permil)')
 ax_bottom.plot(data_index, data['Delta_D_H'])
+ax_bottom.set_ylim([-600,100])
 
 cid = fig[0].canvas.mpl_connect('key_press_event', fig_on_key)
 
@@ -207,8 +208,8 @@ if instrument['O17_flag']:
     r1716i = str13_offset / str2_offset
     r1816i_1v2 = str11_offset / str2_offset
 
-    d17Oi = (r1716i / ref_ratios['r1716i'] - 1) * 1000
-    d18Oi_1v2 = (r1816i_1v2 / ref_ratios['r1816i_1v2'] - 1) * 1000
+    d17Oi = (r1716i / instrument['ref_ratios']['r1716i'] - 1) * 1000
+    d18Oi_1v2 = (r1816i_1v2 / instrument['ref_ratios']['r1816i_1v2'] - 1) * 1000
 
     d17Op = Delta_17_16
 
@@ -216,8 +217,8 @@ else:
     rDHi = peak3_offset / peak2_offset
     r1816i = peak1_offset / peak2_offset
 
-dDi = (rDHi / ref_ratios['rDHi'] - 1) * 1000
-d18Oi = (r1816i / ref_ratios['r1816i'] - 1) * 1000
+dDi = (rDHi / instrument['ref_ratios']['rDHi'] - 1) * 1000
+d18Oi = (r1816i / instrument['ref_ratios']['r1816i'] - 1) * 1000
 
 headers = headers + hdf5_additions
 
@@ -237,6 +238,10 @@ else:
 run_dir += f"{start_run}{run_keyword}/"
 if os.path.isdir(run_dir) is False:
     os.mkdir(run_dir)
+
+if os.path.isdir(os.path.join(run_dir, 'archive')) is False:
+    os.mkdir(os.path.join(run_dir, 'archive'))
+
 
 run_name = f"{start_run}-{end_run}{run_keyword}"
 

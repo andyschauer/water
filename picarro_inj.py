@@ -5,23 +5,20 @@ This script will find each injection and reduce the h5 level data (~ 1 Hz data) 
 description file is required. This script effectively creates Picarro's Coordinator output, albeit in json format
 and with all of the data fields present that are in the original h5 files.
 
-Version 1.4 from 2023-02-14 has the the tray description file parsing higher in the code so that if it errors out we don't have
-to wait for the injection level data to completely process. Also, it attempts to help the user understand that a tray description
-file error is happening and prompts for the issue to be fixed before continuing.
+Version 2.0 has a different strategy employed to find peaks. Previous versions found the tops of peaks using H2O, dH2O_dT, and dH2O_dT2.
+This version finds to troughs using the same three parameters. This came from an attempt to be able to account for failed injections and
+the desire to show the complete injection from start to finish. Furthermore, I have made an effort to have measured thresholds rather than
+static values set by me. They can still be changed to some custom value but the initial thresholds are measured. These are stored in the
+peak detection settings file and imported as pds.
 
-Version 1.5 from 2023-06-07 has the ability to deal with the new Hot Tee injection method. Stay tuned for a publication on this.
-The short version is, the picarro vaporizer died and I took the opportunity to test a method I had been wondering about. Injecting
-very slowly into a hot tee. Turns out it works quite well. More on this later. Also in this version, and in an attempt to make a single
-script allow for many different types and sizes of injections, I have tried to make the peak detection settings (pds dictionary)
-more flexible. Version 1.51 corrects typo in figure legend.
-
-Version 1.6 from 2023-07-20 has the peak detection settings parameters, injection quality control, and file management reworked.
+Version 2.1 has project and tray removed from tray description file
 """
+
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-07-24"
-__version__ = "1.6"
+__last_modified__ = "2023-12-30"
+__version__ = "2.1"
 __copyright__ = "Copyright 2023, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -39,7 +36,9 @@ from natsort import natsorted
 import numpy as np
 import os
 from picarro_lib import *
+from scipy.signal import find_peaks
 import shutil
+import sys
 import time as t
 import warnings
 import webbrowser
@@ -47,40 +46,100 @@ import webbrowser
 
 # -------------------- functions ------------------------------------
 
-def get_default_peak_detection_settings():
-    # get mode of H2O so we know where to center the H2O thresholds
-    #    - this assumes one injection size, still working on getting multiple injection sizes
-    H2Omode = calc_mode(H2O[H2O>1000], -1) # round to nearest 10s position
-    H2Omode_range = 10000
-    pds = {"H2O_threshold_min": H2Omode - H2Omode_range/2,
-           "H2O_threshold_max": H2Omode + H2Omode_range/2,
-           "dH2O_dT2_threshold": 50,
-           "kernel_size": 5,
-           "min_pts_in_pks": 70,
-           "min_pts_between_pks": 60,  # about 60 seconds between peaks
-           "trim_end": 5,
-           "trim_start": 5}
+def get_peak_detection_settings():
+    # Peak detection settings may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+    #    run, you may need to adjust the peak detection settings in order to salvage your data.
 
+    # The H2O concentration distribution has two modes, one at the background level in between injections and a second at the peak height level.
+    max_H2O_background = 1000
+    lower_H2O_mode = calc_mode(H2O[H2O < max_H2O_background], -1)
+    upper_H2O_mode = calc_mode(H2O[H2O > max_H2O_background], -1)
+    default_pds = {"kernel_size": 5,
+           "dH2O_dT2": 50,
+           "max_H2O_background": max_H2O_background,
+           "lower_H2O_mode": int(lower_H2O_mode),
+           "upper_H2O_mode": int(upper_H2O_mode),
+           "trim_start": 10,
+           "trim_end": 10,
+           "trough_diff": 100}
+
+    # Check for the existence of a settings file to grab existing peak detection settings
+    pds_file = os.path.join(run_dir, 'peak_detection_settings.json')
+    if os.path.isfile(pds_file):
+        with open(pds_file, 'r') as f:
+            existing_pds = json.load(f)
+        if (set(existing_pds.keys()) == set(default_pds.keys())) is False:
+            print('    Archiving existing peak detection settings file and using new default settings.')
+            shutil.copy2(pds_file, os.path.join(archive_dir, f"peak_detection_settings_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'peak_detection_settings.json')))}.json"))
+            pds = default_pds
+        else:
+            print('    Using existing peak detection settings.')
+            pds = existing_pds
+    else:
+        print('    Using default peak detection settings.')
+        pds = default_pds
     with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', encoding='utf-8') as f:
         json.dump(pds, f, ensure_ascii=False, indent=4)
 
     return pds
 
 
-def get_default_quality_control_parameters():
-    qcp = {'max_H2O_std': round(calc_mode(inj['H2O']['std'], -1) * 3.3, 0),
-           'max_d18O_std': round(calc_mode(inj['d18O']['std'], 1) * 3.3, 2),
-           'max_dD_std': round(calc_mode(inj['dD']['std'], 1) * 3.3, 1),
+def get_quality_control_parameters():
+    # Quality control injection parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+    #    run, you may need to adjust the injection quality control parameters in order to salvage your data.
+    default_qcp = {'max_H2O_std': round(calc_mode(inj['H2O']['std'], -1) * 4.4, 0),
+           'max_d18O_std': round(calc_mode(inj['d18O']['std'], 1) * 4.4, 2),
+           'max_dD_std': round(calc_mode(inj['dD']['std'], 1) * 4.4, 1),
            'max_CAVITYPRESSURE_std': 0.056,
            'min_H2O': 5000}
-
     if instrument['O17_flag']:
-        qcp['max_d17O_std'] = round(calc_mode(inj['d17O']['std'], 1) * 3.3, 2)
+        default_qcp['max_d17O_std'] = round(calc_mode(inj['d17O']['std'], 1) * 4.4, 2)
 
+    # Check for the existence of a settings file to grab existing peak detection settings
+    qcp_file = os.path.join(run_dir, 'quality_control_parameters_inj.json')
+    if os.path.isfile(qcp_file):
+        with open(qcp_file, 'r') as f:
+            existing_qcp = json.load(f)
+        if set(existing_qcp.keys()) == set(default_qcp.keys()) is False:
+            print('    Archiving existing quality control parameters file and using new default parameters.')
+            shutil.copy2(qcp_file, os.path.join(archive_dir, f"quality_control_parameters_inj_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'quality_control_parameters_inj.json')))}.json"))
+            qcp = default_qcp
+        else:
+            print('    Using existing quality control parameters.')
+            qcp = existing_qcp
+    else:
+        print('    Using default quality control parameters.')
+        qcp = default_qcp
     with open(os.path.join(run_dir, 'quality_control_parameters_inj.json'), 'w', encoding='utf-8') as f:
         json.dump(qcp, f, ensure_ascii=False, indent=4)
 
     return qcp
+
+
+def plot_this(data):
+    pplt.plot(data, '.')
+    pplt.hlines([np.mean(data)-np.std(data)*4.4, np.mean(data)+np.std(data)*4.4], xmin=0, xmax=len(data))
+    pplt.show()
+
+
+def plot_H2O():
+    fig, ax = pplt.subplots()
+    [ax.plot(range(i-i,j-i), H2O[range(i,j)], '-') for i,j in zip(peak['start'], peak['end'])]
+    pplt.show()
+
+
+def plot_residual(data):
+    fig, ax = pplt.subplots()
+    [ax.plot(range(i-i,j-i), data[range(i,j)]-np.mean(data[range(i,j)]), '.') for i,j in zip(peak['top_start'], peak['top_end'])]
+    pplt.show()
+    # [pplt.plot(data[j:k]-np.mean(data[j:k]), '.') for j, k in zip(peak['top_start'], peak['top_end'])]
+    # pplt.hlines([np.std(dD_residual)*4.4, -np.std(dD_residual)*4.4], xmin=0, xmax=350)
+
+
+def screen_outliers(data, threshold):
+    m = np.mean(data)
+    i = np.where((data > m-threshold) & (data < m+threshold))
+    return i
 
 
 # -------------------- get instrument information --------------------
@@ -164,7 +223,7 @@ while identified_file == 0:
             print('    Tray description file found.')
             identified_file = 1
             tray_description_file = tray_description_file_list[0]
-            shutil.copy2(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file), os.path.join(project_dir, run_dir, tray_description_file))
+        shutil.copy2(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file), os.path.join(project_dir, run_dir, tray_description_file))
 
     else:
         print('\n ** Tray description file not found. **')
@@ -175,9 +234,7 @@ tray_file_good = False
 while tray_file_good is False:
     tray_headers, tray_data = read_file(os.path.join(project_dir, 'TrayDescriptions/', tray_description_file), ',')
     try:
-        # Project,Tray,Vial,Identifier 1,Injections
-        project = tray_data['Project']
-        tray = tray_data['Tray']
+        # Vial,Identifier 1,Injections
         vial = np.asarray(tray_data['Vial'], dtype=int)
         id1 = tray_data['Identifier1']
         expected_inj = np.asarray(tray_data['Injections'], dtype=int)
@@ -185,7 +242,7 @@ while tray_file_good is False:
         tray_file_good = True
     except KeyError:
         print('\n ** Problem with TrayDescription file. ** ')
-        print('        - Make sure your tray description file has these column headings "Project, Tray, Vial, Identifier 1, Injections".')
+        print('        - Make sure your tray description file has these column headings "Vial, Identifier 1, Injections".')
         print('        - If all the above columns are present, open it in a text editor (NOT EXCEL) and make sure their are no extra commas at the bottom.')
         input('\n    Fix the error, save the tray description file, come back, and hit ENTER to continue.')
 
@@ -240,83 +297,104 @@ else:
 # -------------------- Find individual injections --------------------
 print('\n    Finding injection peaks.')
 
+# Identify the very start of the injection, when the H2O starts to increase
 
-# Peak detection settings may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
-#    run, you may need to adjust the peak detection settings in order to salvage your data.
+pds = get_peak_detection_settings()
 
-# List of keys that are currently expected to be in the peak detection settings file. If they are different from this list, archive
-#    the file and make a new one.
-peak_detection_settings_keys = ["dH2O_dT2_threshold",
-                                "H2O_threshold_min",
-                                "H2O_threshold_max",
-                                "kernel_size",
-                                "min_pts_in_pks",
-                                "min_pts_between_pks",
-                                "trim_end",
-                                "trim_start"]
+dT = np.diff(time)
+dT = np.append(dT, np.mean(dT))
 
-# Check for the existence of a settings file to grab existing peak detection settings
-pds_file = os.path.join(run_dir, 'peak_detection_settings.json')
-if os.path.isfile(pds_file):
-    existing_pds = True
-    with open(pds_file, 'r') as f:
-        pds = json.load(f)
-
-    if set(pds.keys()).issubset(peak_detection_settings_keys) is False:
-        # archive existing file
-        shutil.copy2(pds_file, os.path.join(archive_dir, f"peak_detection_settings_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'peak_detection_settings')))}.json"))
-        pds = get_default_peak_detection_settings()
-        existing_pds = False
-
-else:
-    pds = get_default_peak_detection_settings()
-    existing_pds = False
-
-
-time_diff = np.diff(time)
-time_diff = np.append(time_diff, np.mean(time_diff))
 kernel = np.ones(pds['kernel_size']) / pds['kernel_size']
 H2O_convolved = np.convolve(H2O, kernel, mode='same')
-H2O_diff = np.diff(H2O_convolved)
-H2O_diff = np.append(H2O_diff, H2O_diff[-1])  # duplicate last value so length of array is the same as the original length
-dH2O_dT = H2O_diff / time_diff
-dH2O_dT_convolved = np.convolve(dH2O_dT, kernel, mode='same')
-dH2O_dT2 = np.diff(dH2O_dT_convolved)
+dH2O = np.diff(H2O_convolved)
+dH2O = np.append(dH2O, dH2O[-1])  # duplicate last value so length of array is the same as the original length
+dH2O_dT = dH2O / dT
+dH2O_dT2 = np.diff(dH2O_dT)
 dH2O_dT2 = np.append(dH2O_dT2, dH2O_dT2[-1])
-dH2O_dT2_convolved = np.convolve(dH2O_dT2, kernel, mode='same')
-
-pks = np.where(np.logical_and(abs(dH2O_dT2_convolved) < pds['dH2O_dT2_threshold'], 
-                              np.logical_and(H2O > pds['H2O_threshold_min'],
-                                             H2O < pds['H2O_threshold_max'])))[0]
 
 adi = np.arange(0, len(H2O), 1)
-pks_end = np.asarray(np.diff(pks) > pds['min_pts_between_pks']).nonzero()[0]
-end_of_each_inj = adi[pks[pks_end]]
-end_of_each_inj = np.append(end_of_each_inj, pks[-1])
-end_of_each_inj = end_of_each_inj - pds['trim_end']
-pks_start = pks_end + 1
-start_of_each_inj = adi[pks[pks_start]]
-start_of_each_inj = np.insert(start_of_each_inj, 0, pks[0])
-start_of_each_inj = start_of_each_inj + pds['trim_start']
+peak = {}
 
-# if the start of the peak is after the end of the peak, remove it from the peak indexing arrays
+peak['trough'] = np.where(np.logical_and(H2O < pds['lower_H2O_mode'] * 2,                                                   # threshold is sufficiently above baseline
+                                             np.logical_and(dH2O_dT < 0,                                                    # H2O ppm is decreasing
+                                                            np.logical_and(dH2O_dT2 > 0, dH2O_dT2 < pds['dH2O_dT2']))))[0]  # at the low end of acceleration
+
+peak['start'] = peak['trough'][np.where(np.diff(peak['trough'])>pds['trough_diff'])[0]]  # this reduces the above trough to a single point marking the start of an injection
+peak['end'] = peak['trough'][np.where(np.diff(peak['trough'])>pds['trough_diff'])[0]+1]  # this reduces the above trough to a single point marking the end of an injection
+
+peak['width'] = peak['end'] - peak['start']
+
+i=0
+meanpeakwidth = int(np.round(np.mean(peak['width']), 0))
+meanH2Opeak = np.zeros(meanpeakwidth)
+while i < meanpeakwidth:
+    meanH2Opeak[i] = np.mean(H2O[peak['start']+i])
+    i+=1
+
+dmeanH2Opeak = np.diff(meanH2Opeak)
+dmeanH2Opeak = np.append(dmeanH2Opeak, dmeanH2Opeak[-1])
+max_increase = np.where(dmeanH2Opeak == np.max(dmeanH2Opeak))[0]
+# min_decrease = np.where(dmeanH2Opeak == np.min(dmeanH2Opeak))[0] # this is the default, the below line was used to offset some datasets that exhibit a steep decline at the start of the peak
+min_decrease = np.where(dmeanH2Opeak[20:] == np.min(dmeanH2Opeak[20:]))[0]+20
+dmeanH2Opeak_dT2 = np.diff(dmeanH2Opeak)
+dmeanH2Opeak_dT2 = np.append(dmeanH2Opeak_dT2, dmeanH2Opeak_dT2[-1])
+meanH2Opeaktop = np.where(abs(dmeanH2Opeak_dT2[max_increase[0]:min_decrease[0]]) < 20)[0]            # I would prefer to have "20" be a measured value, but for now, it is fixed and attempts to estimate a low-ish value for acceleration that seems appropriate for the top of the peak
+trim_start = max_increase[0] + meanH2Opeaktop[10]                                                    # the "[10]" is an effort to offset from the start of the measured top
+trim_end = len(meanH2Opeak) - meanH2Opeaktop[-2]                                                     # the "[-2]" is an effort to offset from the end of the measured top
+peak['top_start'] = peak['start'] + trim_start
+peak['top_end'] = peak['end'] - trim_end
+
+peak['separation'] = peak['start'][1:] - peak['end'][0:-1]
+peak_separation_mode = calc_mode(peak['separation'], 0)
+
+missing_injections = np.where(np.round(peak['separation'] / peak_separation_mode, 0) > 1)[0]
+# total_missing_injections = np.sum(np.round(peak['separation'] / peak_separation_mode, 0)[missing_injections])
+total_missing_injections = len(missing_injections)
+
+print(f"    Expected {np.sum(expected_inj)} injections, found {len(peak['start'])}")
+if np.sum(expected_inj) != len(peak['start']):
+    print(f"    It looks like {total_missing_injections} injection(s) is(are) unaccounted for. Check near injection(s) {missing_injections}, which should be on or near vial(s) {np.round(missing_injections / expected_inj[0],0)+1}.")
+
+
+# Edge case when peak is erroneously narrow. If the start of the peak is after the end of the peak, remove it from the peak indexing arrays.
 to_be_deleted = []
-for i in range(len(start_of_each_inj)):
-    if start_of_each_inj[i] > end_of_each_inj[i]:
+for i in range(len(peak['top_start'])):
+    if peak['top_start'][i] > peak['top_end'][i]:
         to_be_deleted.append(i)
 
 if len(to_be_deleted)>0:
-    start_of_each_inj = np.delete(start_of_each_inj, to_be_deleted)
-    end_of_each_inj = np.delete(end_of_each_inj, to_be_deleted)
+    peak['top_start'] = np.delete(peak['top_start'], to_be_deleted)
+    peak['top_end'] = np.delete(peak['top_end'], to_be_deleted)
 
 
-inj_gdi = [adi[i:j] for i, j in zip(start_of_each_inj, end_of_each_inj)]
+
+# -------------------- Screen gdi set for outliers --------------------
+H2O_residual = [H2O[i:j]-np.mean(H2O[i:j]) for i,j in zip(peak['top_start'], peak['top_end'])]
+H2O_residual = np.concatenate(H2O_residual).ravel()
+H2O_outlier_threshold = np.std(H2O_residual)*3.3
+
+d18O_residual = [d18O[i:j]-np.mean(d18O[i:j]) for i,j in zip(peak['top_start'], peak['top_end'])]
+d18O_residual = np.concatenate(d18O_residual).ravel()
+d18O_outlier_threshold = np.std(d18O_residual)*3.3
+
+dD_residual = [dD[i:j]-np.mean(dD[i:j]) for i,j in zip(peak['top_start'], peak['top_end'])]
+dD_residual = np.concatenate(dD_residual).ravel()
+dD_outlier_threshold = np.std(dD_residual)*3.3
+
+gdi_H2O = [screen_outliers(H2O[i:j], H2O_outlier_threshold) for i,j in zip(peak['top_start'], peak['top_end'])]
+gdi_d18O = [screen_outliers(d18O[i:j], d18O_outlier_threshold) for i,j in zip(peak['top_start'], peak['top_end'])]
+gdi_dD = [screen_outliers(dD[i:j], dD_outlier_threshold) for i,j in zip(peak['top_start'], peak['top_end'])]
+gdi_H2O__gdi_d18O = [np.intersect1d(i,j) for i,j in zip(gdi_H2O, gdi_d18O)]
+gdi_H2O__gdi_d18O__gdi_dD = [np.intersect1d(i,j) for i,j in zip(gdi_H2O__gdi_d18O, gdi_dD)]
+
+inj_gdi = [adi[i:j][k] for i, j, k in zip(peak['top_start'], peak['top_end'], gdi_H2O__gdi_d18O__gdi_dD)]
+
 gdi = np.concatenate(inj_gdi).ravel()
-
 
 
 # -------------------- Summarize Injection Data --------------------
 print('\n    Summarizing injection data.')
+dD_short_flag = False  # trim extra long injections to a shorter amount which reduces memory on commercial vaporizers
 
 inj_exclude_list = ['ALARM_STATUS', 'AccelX', 'AccelY', 'AccelZ', 'Battery_Charge', 'Battery_Current', 'Battery_Temperature', 'Battery_Voltage',
                     'CH4_2min', 'CH4_30s', 'CH4_5min', 'CavityTemp1', 'CavityTemp2', 'CavityTemp3', 'CavityTemp4', 'FanState', 'Flow1',
@@ -331,17 +409,13 @@ with warnings.catch_warnings():
     inj = {}
     for data in included_datasets:
         inj[data] = {}
-        inj[data]['mean'] = np.array(np.zeros(len(start_of_each_inj)))
-        inj[data]['std'] = np.array(np.zeros(len(start_of_each_inj)))
+        inj[data]['mean'] = np.array(np.zeros(len(peak['top_start'])))
+        inj[data]['std'] = np.array(np.zeros(len(peak['top_start'])))
 
-        for i, _ in enumerate(start_of_each_inj):
-            if data == 'dD' and (end_of_each_inj[i] - start_of_each_inj[i]) > 120:
-                curr_range = range(start_of_each_inj[i], start_of_each_inj[i] + 120)
-            else:
-                curr_range = range(start_of_each_inj[i], end_of_each_inj[i])
+        for i, j in enumerate(inj_gdi):
             try:
-                inj[data]['mean'][i] = np.nanmean(eval(data)[curr_range])
-                inj[data]['std'][i] = np.nanstd(eval(data)[curr_range])
+                inj[data]['mean'][i] = np.nanmean(eval(data)[j])
+                inj[data]['std'][i] = np.nanstd(eval(data)[j])
             except (FloatingPointError, TypeError) as error:
                 print(f'    **** Error with index {i} - {error} ****    ')
                 inj[data]['mean'][i] = np.nan
@@ -352,17 +426,16 @@ with warnings.catch_warnings():
     inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_slope', 'dD_H2O_slope', 'd18O_H2O_slope']
 
     for data in inj_extra_list:
-        inj[data] = np.array(np.zeros(len(start_of_each_inj)))
+        inj[data] = np.array(np.zeros(len(peak['top_start'])))
 
-    for i, _ in enumerate(start_of_each_inj):
-        curr_range = range(start_of_each_inj[i], end_of_each_inj[i])
+    for i, j in enumerate(inj_gdi):
         try:
-            inj['n_high_res'][i] = np.asarray(len(H2O[curr_range]))
-            inj['H2O_time_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], time[curr_range], 1)[0])
-            inj['dD_time_slope'][i] = np.asarray(np.polyfit(time[curr_range], dD[curr_range], 1)[0])
-            inj['d18O_time_slope'][i] = np.asarray(np.polyfit(time[curr_range], d18O[curr_range], 1)[0])
-            inj['dD_H2O_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], dD[curr_range], 1)[0])
-            inj['d18O_H2O_slope'][i] = np.asarray(np.polyfit(H2O[curr_range], d18O[curr_range], 1)[0])
+            inj['n_high_res'][i] = np.asarray(len(H2O[j]))
+            inj['H2O_time_slope'][i] = np.asarray(np.polyfit(H2O[j], time[j], 1)[0])
+            inj['dD_time_slope'][i] = np.asarray(np.polyfit(time[j], dD[j], 1)[0])
+            inj['d18O_time_slope'][i] = np.asarray(np.polyfit(time[j], d18O[j], 1)[0])
+            inj['dD_H2O_slope'][i] = np.asarray(np.polyfit(H2O[j], dD[j], 1)[0])
+            inj['d18O_H2O_slope'][i] = np.asarray(np.polyfit(H2O[j], d18O[j], 1)[0])
         except (FloatingPointError, TypeError) as error:
             print(f'    **** Error with index {i} - {error} ****    ')
             for data in inj_extra_list:
@@ -376,7 +449,7 @@ detected_inj = len(inj['H2O']['mean'])
 if np.sum(expected_inj) != detected_inj:
 
     # -------------------- If actual number of injections do not match expected number of injections --------------------
-    print(f"\n** Expecting {np.sum(expected_inj)} injections. Found {detected_inj} injections. Look carefully at the figure to assess what went wrong. **")
+    print(f"\n ** Expecting {np.sum(expected_inj)} injections. Found {detected_inj} injections. Look carefully at the figure to assess what went wrong. **")
     t.sleep(2)
 
     # save injection detection parameters and tell user to edit them
@@ -386,15 +459,20 @@ if np.sum(expected_inj) != detected_inj:
     fig_a = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig_a.circle(adi, H2O, color="black", legend_label="All data", size=2)
     fig_a.circle(gdi, H2O[gdi], color="yellow", legend_label="Data identified as good but...", size=6)
-    fig_a.circle(start_of_each_inj, H2O[start_of_each_inj], color="green", size=6, legend_label="Start of each injection")
-    fig_a.circle(end_of_each_inj, H2O[end_of_each_inj], color="red", size=6, legend_label="End of each injection")
+    fig_a.circle(peak['top_start'], H2O[peak['top_start']], color="green", size=6, legend_label="Start of each injection")
+    fig_a.circle(peak['top_end'], H2O[peak['top_end']], color="red", size=6, legend_label="End of each injection")
     fig_a_caption = f"""Figure A. Water concentration during your run."""
 
-    fig_b = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
+    fig_b = figure(width=1100, height=700,
+                   y_range=(-100, 10),
+                   x_axis_label="data index",
+                   y_axis_label="d18O raw (permil)",
+                   tools="pan, box_zoom, reset, save",
+                   active_drag="box_zoom")
     fig_b.circle(adi, d18O, color="black", legend_label="All data", size=2)
     fig_b.circle(gdi, d18O[gdi], color="yellow", legend_label="Data identified as good but...", size=6)
-    fig_b.circle(start_of_each_inj, d18O[start_of_each_inj], color="green", size=6, legend_label="Start of each injection")
-    fig_b.circle(end_of_each_inj, d18O[end_of_each_inj], color="red", size=6, legend_label="End of each injection")
+    fig_b.circle(peak['top_start'], d18O[peak['top_start']], color="green", size=6, legend_label="Start of each injection")
+    fig_b.circle(peak['top_end'], d18O[peak['top_end']], color="red", size=6, legend_label="End of each injection")
     fig_b_caption = f"""Figure 3. Oxygen-18 isotope composition (d18O or delta 18 Oh)."""
 
     # -------------------- make mismatch html page --------------------
@@ -432,8 +510,6 @@ else:
         os.remove(os.path.join(run_dir, f'{hdf5_file[0:-5]}_Injection_Accounting_Problem.html'))
 
     # -------------------- put sample IDs and vial inj number into inj dictionary --------------------
-    inj['project'] = [[i] * j for i, j in zip(project, expected_inj)]
-    inj['project'] = [x for xs in inj['project'] for x in xs]
     inj['id1'] = [[i] * j for i, j in zip(id1, expected_inj)]
     inj['id1'] = [x for xs in inj['id1'] for x in xs]
     inj['vial_num'] = [[i] * j for i, j in zip(vial, expected_inj)]
@@ -447,40 +523,13 @@ else:
     # -------------------- quality control injections --------------------
     print('\n    Checking quality of injections.')
 
-
-    # Quality control injection parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
-    #    run, you may need to adjust the injection quality control parameters in order to salvage your data.
-
-    # List of keys that are currently expected to be in the injection quality control parameters file. If they are different from this list, archive
-    #    the file and make a new one.
-    quality_control_parameters_inj_keys = ['max_H2O_std',
-                                           'max_d18O_std',
-                                           'max_dD_std',
-                                           'max_CAVITYPRESSURE_std',
-                                           'min_H2O']
-    if instrument['O17_flag']:
-        quality_control_parameters_inj_keys.append('max_d17O_std')
-
-    # Check for the existence of a settings file to grab existing peak detection settings
-    qcp_file = os.path.join(run_dir, 'quality_control_parameters_inj.json')
-    if os.path.isfile(qcp_file):
-        with open(qcp_file, 'r') as f:
-            qcp = json.load(f)
-
-        if set(qcp.keys()).issubset(quality_control_parameters_inj_keys) is False:
-            # archive existing file
-            shutil.copy2(qcp_file, os.path.join(archive_dir, f"quality_control_parameters_inj_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'quality_control_parameters_inj.json')))}.json"))
-            qcp = get_default_quality_control_parameters()
-
-    else:
-        qcp = get_default_quality_control_parameters()
-
+    qcp = get_quality_control_parameters()
 
     if qcp['max_H2O_std'] > 2000:
         print(f" ** Check your injections, the H2O ppm seems noisier than normal.")
-    if qcp['max_d18O_std'] > 1.0:
+    if qcp['max_d18O_std'] > 0.3*4.4:
         print(f" ** Check your injections, the d18O seems noisier than normal.")
-    if qcp['max_dD_std'] > 2.0:
+    if qcp['max_dD_std'] > 0.8*4.4:
         print(f" ** Check your injections, the dD seems noisier than normal.")
 
     inj['flag'] = np.ones(len(inj['H2O']['mean']))
@@ -506,11 +555,15 @@ else:
             inj['flag'][i] = 0
             inj['flag_reason'][i] = 'above max_CAVITYPRESSURE_std'
             print(f"\n    Injection {i} had high cavity pressure standard deviation ({round(inj['CavityPressure']['std'][i],3)} Torr). Threshold is {qcp['max_CAVITYPRESSURE_std']} Torr.")
-    fdi = np.concatenate([inj_gdi[i] for i in np.where(inj['flag'] == 0)[0]]).ravel()
-    flagged_reason = [inj['flag_reason'][i] for i in np.where(inj['flag'] == 0)[0]]
-    flagged_id1 = [inj['id1'][i] for i in np.where(inj['flag'] == 0)[0]]
-    flagged_vial = [inj['vial_num'][i] for i in np.where(inj['flag'] == 0)[0]]
-    flagged_inj = [inj['inj_num'][i] for i in np.where(inj['flag'] == 0)[0]]
+    flag0_index = np.where(inj['flag']==0)[0]
+    if len(flag0_index)>0:
+        fdi = np.concatenate([inj_gdi[i] for i in flag0_index]).ravel()
+    else:
+        fdi = []
+    flagged_reason = [inj['flag_reason'][i] for i in flag0_index]
+    flagged_id1 = [inj['id1'][i] for i in flag0_index]
+    flagged_vial = [inj['vial_num'][i] for i in flag0_index]
+    flagged_inj = [inj['inj_num'][i] for i in flag0_index]
 
     # -------------------- make high resolution data figures --------------------
     fig1 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
@@ -519,32 +572,48 @@ else:
     fig1.circle(fdi, H2O[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig1_caption = f"""Figure 1. Water concentration during your run where each injection peak top is shown
                        in green. Reasonable injection water concentrations range from 17000 to 23000 ppmv.
-                       Any injection below 10000 ppmv is <a href="#flagged_injections">flagged</a>."""
+                       Injections with an H2O standard deviation above {qcp['max_H2O_std']} are <a href="#flagged_injections">flagged</a>."""
 
-    fig2 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="Cavity Pressure (Torr)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    fig2.circle(adi, CavityPressure, color="black", legend_label="All data", size=2)
-    fig2.circle(gdi, CavityPressure[gdi], color="green", legend_label="Good data", size=6)
-    fig2.circle(fdi, CavityPressure[fdi], color="yellow", legend_label="Flagged data", size=6)
-    fig2_caption = f"""Figure 2. Cavity pressure is carefully controlled. Injections with a standard deviation
-                       greater than {qcp['max_CAVITYPRESSURE_std']} Torr are <a href="#flagged_injections">flagged</a>."""
+    fig2 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
+    [fig2.line(range(i-i,j-i), H2O[range(i,j)]) for i,j in zip(peak['start'], peak['end'])]
+    fig2_caption = f"""Figure 2. Water concentration for each pulse plotted on top of each other. Zero is the maximum derivative of H2O during
+                       the beginning of an injection. If these data are from a HotTee vaporizer, then the errant spikes are most likely from
+                       bubbles in the syringe. Bubbles are evil."""
 
-    fig3 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="dD raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
+    fig3 = figure(width=1100, height=700,
+                  y_range=(-500,50),
+                  x_axis_label="data index",
+                  y_axis_label="dD raw (permil)",
+                  tools="pan, box_zoom, reset, save",
+                  active_drag="box_zoom")
     fig3.circle(adi, dD, color="black", legend_label="All data", size=2)
     fig3.circle(gdi, dD[gdi], color="green", legend_label="Good data", size=6)
     fig3.circle(fdi, dD[fdi], color="yellow", legend_label="Flagged data", size=6)
     fig3_caption = f"""Figure 3. Hydrogen isotope composition (dD or delta Dee). Injections with a standard
                        deviation greater than {qcp['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
-    fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O raw (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    fig4.circle(adi, d18O, color="black", legend_label="All data", size=2)
-    fig4.circle(gdi, d18O[gdi], color="green", legend_label="Good data", size=6)
-    fig4.circle(fdi, d18O[fdi], color="yellow", legend_label="Flagged data", size=6)
-    fig4_caption = f"""Figure 3. Oxygen-18 isotope composition (d18O or delta 18 Oh). Injections with a standard
+    fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="dD - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
+    [fig4.circle(range(i-i,j-i), dD[range(i,j)]-np.mean(dD[range(j-20,j)]), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    fig4_caption = f"""Figure 4. dD departure from the final 20 measurements of each top of injection peak."""
+
+    fig5 = figure(width=1100, height=700,
+                  y_range=(-100,10),
+                  x_axis_label="data index",
+                  y_axis_label="d18O raw (permil)",
+                  tools="pan, box_zoom, reset, save",
+                  active_drag="box_zoom")
+    fig5.circle(adi, d18O, color="black", legend_label="All data", size=2)
+    fig5.circle(gdi, d18O[gdi], color="green", legend_label="Good data", size=6)
+    fig5.circle(fdi, d18O[fdi], color="yellow", legend_label="Flagged data", size=6)
+    fig5_caption = f"""Figure 5. Oxygen-18 isotope composition (d18O or delta 18 Oh). Injections with a standard
                        deviation greater than {qcp['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
+    fig6 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
+    [fig6.circle(range(i-i,j-i), d18O[range(i,j)]-np.mean(d18O[range(j-20,j)]), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    fig6_caption = f"""Figure 6. d18O departure from the final 20 measurements of each top of injection peak."""
 
     # -------------------- make html page --------------------
-    print('Making html page...')
+    print('\nMaking html page...')
     header = f'''
         <!DOCTYPE html>
         <html lang="en">
@@ -591,6 +660,10 @@ else:
         html_page.write(f"{fig3_caption}<hr><br>")
         html_page.write(file_html(fig4, CDN))  # INLINE when no internet, CDN otherwise
         html_page.write(f"{fig4_caption}<hr><br>")
+        html_page.write(file_html(fig5, CDN))  # INLINE when no internet, CDN otherwise
+        html_page.write(f"{fig5_caption}<hr><br>")
+        html_page.write(file_html(fig6, CDN))  # INLINE when no internet, CDN otherwise
+        html_page.write(f"{fig6_caption}<hr><br>")
         html_page.write("""<h2>Flagged injections</h2>
                         <div class="text-indent">
                         <div id="flagged_injections">These injections were flagged:<table>
