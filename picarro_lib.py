@@ -23,7 +23,7 @@ __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
 __last_modified__ = "2023-07-24"
 __version__ = "1.7"
-__copyright__ = "Copyright 2023, Andy Schauer"
+__copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
@@ -109,7 +109,7 @@ def get_instrument():
         used provided we know that a particular standard is entering the cavity. See picarro_h5.py
         for the ratio calculation."""
 
-    instrument_list = 'abel, desoto, mildred, phoenix, not_listed'
+    instrument_list = 'abel, desoto, mildred, phoenix, gower, not_listed'
     name_recognized = False
 
     while name_recognized is False:
@@ -151,6 +151,13 @@ def get_instrument():
                 'r1816i': 1.6954,
                 'r1716i': 0.5854,
                 'r1816i_1v2': 0.9623}
+
+        elif entered_name == 'gower':
+            name_recognized = True
+            instrument = {
+                'name': 'Gower',
+                'model': 'L2130i',
+                'O17_flag': False}
 
         elif entered_name == 'not_listed':
             name_recognized = True

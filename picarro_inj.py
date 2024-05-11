@@ -19,7 +19,7 @@ __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
 __last_modified__ = "2023-12-30"
 __version__ = "2.1"
-__copyright__ = "Copyright 2023, Andy Schauer"
+__copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 

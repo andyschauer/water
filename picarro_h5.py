@@ -10,13 +10,15 @@ In version 1.3, I am not explicitly keeping track of picarro vs isolab delta val
 a 'p' for picarro and an 'i' for isolab on any variable name having to do with a delta calculation (e.g., d18Oi).
 
 In version 1.4 adds the ability to import data from an instrument that is not explicitly listed.
+
+I made minor tweaks to the "not_listed" instrument type so I could reprocess old data with old directory structures
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-03-24"
-__version__ = "1.4"
-__copyright__ = "Copyright 2023, Andy Schauer"
+__last_modified__ = "2024-04-17"
+__version__ = "1.41"
+__copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
@@ -68,11 +70,12 @@ instrument = get_instrument()
 # -------------------- paths --------------------
 if instrument['name'] == 'not_listed':
     project_dir = input('Enter the path to your h5 directory: ')
+    run_dir = project_dir[:-3]
+    h5_dir = os.path.join(project_dir, 'Picarro/G2000/Log/DataLogger/DataLog_Private/')
 else:
     project_dir = f"{get_path('project')}{instrument['name'].lower()}/"
-
-run_dir = os.path.join(project_dir, 'runs/')
-h5_dir = os.path.join(project_dir, 'h5/Picarro/G2000/Log/DataLogger/DataLog_Private/')
+    run_dir = os.path.join(project_dir, 'runs/')
+    h5_dir = os.path.join(project_dir, 'h5/Picarro/G2000/Log/DataLogger/DataLog_Private/')
 
 
 # -------------------- make h5 file list --------------------

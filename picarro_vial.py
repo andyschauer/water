@@ -12,13 +12,14 @@ Version 1.5 mod date 2023.06.28 => added tray description file to report directo
 Version 1.6 mod date 2023.08.01 => added memory calculation
 Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering analyses as a set, fix is creating combined injection array for deltas
 Version 1.7 mod date 2023.11.28 => removed project from data stream
+version 1.8 mod date 2024.05.03 => renamed name to names from change in reference_materials.json file
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-11-28"
-__version__ = "1.7"
-__copyright__ = "Copyright 2023, Andy Schauer"
+__last_modified__ = "2024-05-03"
+__version__ = "1.8"
+__copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
@@ -117,8 +118,8 @@ def memory_calc(delta):
 
 
 # -------------------- CONSTANTS --------------------
-FIRST_INJECTIONS_TO_IGNORE = 3
-DRIFT_CORRECTION = False
+FIRST_INJECTIONS_TO_IGNORE = 2
+DRIFT_CORRECTION = True
 
 
 # -------------------- get instrument information --------------------
@@ -362,7 +363,7 @@ ref_wat = {'vial_index': np.empty(0, dtype="int16"),
 for i in range(len(vial['id1'])):
     if vial['n_inj'][i]>0:
         for j, k in refmat['waters'].items():
-            if vial['id1'][i].lower() == k['name'].lower() and vial['flag'][i] == 1:
+            if vial['id1'][i].lower() == k['names'][0].lower() and vial['flag'][i] == 1:
                 ref_wat['id1'].append(vial['id1'][i])
                 k['index'] = np.append(k['index'], int(i))
                 ref_wat['vial_index'] = np.append(ref_wat['vial_index'], int(i))
@@ -529,6 +530,27 @@ else:
 
 
 # -------------------- Memory -------------------
+# delta = dD_for_memory
+# dDmemory = {
+	# 'vial_to_vial_range': np.zeros(len(vial['vial_num'])),
+	# 'within_vial_range': np.zeros(len(vial['vial_num'])),
+	# 'vial_memory': np.zeros(len(vial['vial_num']))}
+# n=0
+# for i in range(1, len(vial['vial_num'])):
+	# v0_injs = int(vial['total_inj'][i-1])
+	# v0 = np.asarray(range(n, n + v0_injs))
+	# v1_injs = int(vial['total_inj'][i])
+	# v1 = np.asarray(range(n + v0_injs, n + v0_injs + v1_injs))
+	# dDmemory['vial_to_vial_range'][i] = np.abs(np.mean(np.asarray(delta)[v1][-2:]) - np.mean(np.asarray(delta)[v0][-2:]))
+	# dDmemory['within_vial_range'][i] = np.abs(np.asarray(delta)[v1][0] - np.mean(np.asarray(delta)[v1][-2:]))
+	# dDmemory['vial_memory'][i] = 1 - ((dDmemory['vial_to_vial_range'][i] - dDmemory['within_vial_range'][i]) / dDmemory['vial_to_vial_range'][i])
+	# dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
+	# fig, ax = pplt.subplots()
+	# ax.plot(v0, delta[v0], 'ro')
+	# ax.plot(v1, delta[v1], 'bo')
+	# pplt.show()
+	# n+=(v0_injs)
+
 dDmemory = memory_calc(dD_for_memory)
 dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
 
@@ -834,7 +856,7 @@ header = f"""
     </div>
 
     <h2>Data quality</h2>
-    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].upper())['name']}. Precision is
+    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].upper())['names']}. Precision is
         <strong>two standard deviations</strong> over all replicates of the quality control reference water. Accuracy is the difference of the mean of all replicates of the
         quality control reference water from the accepted value.</p>
         <table>
