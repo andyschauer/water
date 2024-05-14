@@ -13,12 +13,13 @@ Version 1.6 mod date 2023.08.01 => added memory calculation
 Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering analyses as a set, fix is creating combined injection array for deltas
 Version 1.7 mod date 2023.11.28 => removed project from data stream
 version 1.8 mod date 2024.05.03 => renamed name to names from change in reference_materials.json file
+version 1.9 mod date 2024.05.14 => removed copytree in favor of makedirs; changed archive dir to be within the run directory
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-05-03"
-__version__ = "1.8"
+__last_modified__ = "2024-05-14"
+__version__ = "1.9"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -140,7 +141,6 @@ if run_or_set == 'run':
 elif run_or_set == 'set':
     run_dir = os.path.join(project_dir, 'sets/')
 
-archive_dir = os.path.join(run_dir, 'archive/')
 
 
 # ---------- Identify json data file(s) to be loaded ----------
@@ -157,6 +157,7 @@ while identified_run == 0:
         run_dir += f'{run}/'
         print(f'    Processing run {run}...')
         report_dir = f"{run_dir}report/"
+        archive_dir = f"{run_dir}archive/"
     else:
         print('\n** More than one run / set found. **\n')
 
@@ -559,7 +560,7 @@ dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vi
 # copy report files
 if os.path.exists(report_dir):
     shutil.move(report_dir, os.path.join(archive_dir, f"report_{int(dt.datetime.utcnow().timestamp())}"))
-shutil.copytree(os.path.join(python_dir, 'report/'), report_dir)
+[os.makedirs(f"{report_dir}/{i}") for i in ['data', 'figures', 'python']]
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
 [shutil.copy2(os.path.join(python_dir, script), os.path.join(report_dir, f"python/{script}_REPORT_COPY")) for script in python_scripts]
 shutil.copy2(os.path.join(python_dir, 'py_report_style.css'), report_dir)
