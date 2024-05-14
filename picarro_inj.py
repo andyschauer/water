@@ -12,13 +12,15 @@ static values set by me. They can still be changed to some custom value but the 
 peak detection settings file and imported as pds.
 
 Version 2.1 has project and tray removed from tray description file
+
+Version 2.2 fixed a bokeh bug that snuck in regarding inability to serialize range.
 """
 
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-12-30"
-__version__ = "2.1"
+__last_modified__ = "2024-05-13"
+__version__ = "2.2"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
 __acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
@@ -575,7 +577,7 @@ else:
                        Injections with an H2O standard deviation above {qcp['max_H2O_std']} are <a href="#flagged_injections">flagged</a>."""
 
     fig2 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    [fig2.line(range(i-i,j-i), H2O[range(i,j)]) for i,j in zip(peak['start'], peak['end'])]
+    [fig2.line(np.asarray(range(i-i,j-i)), np.asarray(H2O[range(i,j)])) for i,j in zip(peak['start'], peak['end'])]
     fig2_caption = f"""Figure 2. Water concentration for each pulse plotted on top of each other. Zero is the maximum derivative of H2O during
                        the beginning of an injection. If these data are from a HotTee vaporizer, then the errant spikes are most likely from
                        bubbles in the syringe. Bubbles are evil."""
@@ -593,7 +595,7 @@ else:
                        deviation greater than {qcp['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="dD - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    [fig4.circle(range(i-i,j-i), dD[range(i,j)]-np.mean(dD[range(j-20,j)]), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    [fig4.circle(np.asarray(range(i-i,j-i)), np.asarray(dD[range(i,j)]-np.mean(dD[range(j-20,j)])), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
     fig4_caption = f"""Figure 4. dD departure from the final 20 measurements of each top of injection peak."""
 
     fig5 = figure(width=1100, height=700,
@@ -609,7 +611,7 @@ else:
                        deviation greater than {qcp['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig6 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    [fig6.circle(range(i-i,j-i), d18O[range(i,j)]-np.mean(d18O[range(j-20,j)]), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    [fig6.circle(np.asarray(range(i-i,j-i)), np.asarray(d18O[range(i,j)]-np.mean(d18O[range(j-20,j)])), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
     fig6_caption = f"""Figure 6. d18O departure from the final 20 measurements of each top of injection peak."""
 
     # -------------------- make html page --------------------
