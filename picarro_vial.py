@@ -14,15 +14,16 @@ Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering a
 Version 1.7 mod date 2023.11.28 => removed project from data stream
 version 1.8 mod date 2024.05.03 => renamed name to names from change in reference_materials.json file
 version 1.9 mod date 2024.05.14 => removed copytree in favor of makedirs; changed archive dir to be within the run directory
+version 1.91 mod date 2024.08.26 => bug in vial sorting when analyzing by set; found another potential bug in the injection filtering step where it should have been ignoring injections with a flag of 0 but it was including them flag>=0. Not sure how that one krept in; added number of injections from start of vial to pitch to the qcp file; also added drift correction choice to the qcp file
+version 1.92 mod date 2024.09.01 => added secondary end of peak detection that may eventually make its way into the main pathway
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-05-14"
-__version__ = "1.9"
+__last_modified__ = "2024-09-01"
+__version__ = "1.91"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- Imports --------------------
@@ -61,9 +62,9 @@ def get_default_quality_control_parameters():
     # qcp = {'max_H2O_std': round(calc_mode(vial['H2O']['std'], -1) * 4.4, 0),
     #        'max_d18O_std': round(calc_mode(vial['d18O']['std'], 2) * 4.4, 3),
     #        'max_dD_std': round(calc_mode(vial['dD']['std'], 2) * 4.4, 2)}
-
     # if instrument['O17_flag']:
     #     qcp['max_d17O_std'] = round(calc_mode(vial['d17O']['std'], 2) * 4.4, 3)
+
     qcp = {'max_H2O_std': round(np.nanmean(vial['H2O']['std']) * 4.4, 0),
            'max_d18O_std': round(np.nanmean(vial['d18O']['std']) * 4.4, 3),
            'max_dD_std': round(np.nanmean(vial['dD']['std']) * 4.4, 2)}
@@ -75,6 +76,16 @@ def get_default_quality_control_parameters():
         json.dump(qcp, f, ensure_ascii=False, indent=4)
 
     return qcp
+
+
+def get_default_data_processing_choices():
+    dpc = {'FIRST_INJECTIONS_TO_IGNORE': 2,
+           'DRIFT_CORRECTION': 0}
+
+    with open(os.path.join(run_dir, 'data_processing_choices.json'), 'w', encoding='utf-8') as f:
+        json.dump(dpc, f, ensure_ascii=False, indent=4)
+
+    return dpc
 
 
 def memory_calc(delta):
@@ -117,16 +128,11 @@ def memory_calc(delta):
 
 
 
-
-# -------------------- CONSTANTS --------------------
-FIRST_INJECTIONS_TO_IGNORE = 2
-DRIFT_CORRECTION = True
-
-
 # -------------------- get instrument information --------------------
 """ Get specific picarro instrument whose data is being processed as well as some associated information. Populate
 this function with your own instrument(s). The function get_instrument() is located in picarro_lib.py."""
 instrument = get_instrument()
+
 
 
 # -------------------- paths --------------------
@@ -162,7 +168,7 @@ while identified_run == 0:
         print('\n** More than one run / set found. **\n')
 
 inj_file_list = make_file_list(run_dir, 'json')
-exclude_file_list = ['peak_detection_settings.json', 'quality_control_parameters_inj.json', 'quality_control_parameters_vial.json']
+exclude_file_list = ['peak_detection_settings.json', 'quality_control_parameters_inj.json', 'quality_control_parameters_vial.json', 'data_processing_choices.json']
 [inj_file_list.remove(i) for i in exclude_file_list if i in inj_file_list]
 
 if run_or_set == 'run':
@@ -183,6 +189,37 @@ if run_or_set == 'run':
     else:
         inj_file = inj_file_list[0]
     inj_file_list = [inj_file]
+
+
+
+# -------------------- data processing choices --------------------
+print('\n    Data processing choices:')
+
+# Quality control vial parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
+#    run, you may need to adjust the vial quality control parameters in order to salvage your data.
+
+# List of keys that are currently expected to be in the vial quality control parameters file. If they are different from this list, archive
+#    the file and make a new one.
+data_processing_choices_keys = ['FIRST_INJECTIONS_TO_IGNORE',
+                                'DRIFT_CORRECTION']
+
+# Check for the existence of a settings file to grab existing peak detection settings
+dpc_file = os.path.join(run_dir, 'data_processing_choices.json')
+if os.path.isfile(dpc_file):
+    with open(dpc_file, 'r') as f:
+        dpc = json.load(f)
+
+    if set(dpc.keys()).issubset(data_processing_choices_keys) is False:
+        # archive existing file
+        shutil.copy2(dpc_file, os.path.join(archive_dir, f"data_processing_choices_ARCHIVE_{int(os.path.getmtime(os.path.join(run_dir,'data_processing_choices.json')))}.json"))
+        dpc = get_default_data_processing_choices()
+
+else:
+    dpc = get_default_data_processing_choices()
+
+print(f"\n        FIRST_INJECTIONS_TO_IGNORE = {dpc['FIRST_INJECTIONS_TO_IGNORE']}")
+print(f"\n        DRIFT_CORRECTION = {dpc['DRIFT_CORRECTION']}")
+
 
 
 # -------------------- Load injection level data from json data file(s) and summarize to vial level data --------------------
@@ -225,11 +262,12 @@ for inj_file in inj_file_list:
 
     # -------------------- summarize vial level data --------------------
     vial_set = list(set(inj['vial_num']))
+    vial_set.sort()
     total_vials += len(vial_set)
     vials_without_injections = []
     
     for i in vial_set:
-        curr_indices = np.where((vial_num == i) & (flag >= 0) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]
+        curr_indices = np.where((vial_num == i) & (flag > 0) & (inj_num > dpc['FIRST_INJECTIONS_TO_IGNORE']))[0]
         for key in inj.keys():
             if key == 'vial_num':
                 vial[key] = np.append(vial[key], i)
@@ -241,6 +279,7 @@ for inj_file in inj_file_list:
                 else:
                     vial[key]['mean'] = np.append(vial[key]['mean'], np.nanmean(eval(key)[curr_indices]))
                     vial[key]['std'] = np.append(vial[key]['std'], np.nanstd(eval(key)[curr_indices]))
+
             else:
                 pass
     
@@ -248,11 +287,9 @@ for inj_file in inj_file_list:
 
     vial['id1'] = np.append(vial['id1'], id1[np.where(inj_num == 1)[0]])
     vial['total_inj'] = np.append(vial['total_inj'], [np.size(time[np.where((vial_num == i))[0]]) for i in vial_set])
-    vial['n_inj'] = np.append(vial['n_inj'], [np.size(time[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
-    vial['n_high_res'] = np.append(vial['n_high_res'], [np.sum(n_high_res[np.where((vial_num == i) & (flag == 1) & (inj_num > FIRST_INJECTIONS_TO_IGNORE))[0]]) for i in vial_set])
+    vial['n_inj'] = np.append(vial['n_inj'], [np.size(time[np.where((vial_num == i) & (flag == 1) & (inj_num > dpc['FIRST_INJECTIONS_TO_IGNORE']))[0]]) for i in vial_set])
+    vial['n_high_res'] = np.append(vial['n_high_res'], [np.sum(n_high_res[np.where((vial_num == i) & (flag == 1) & (inj_num > dpc['FIRST_INJECTIONS_TO_IGNORE']))[0]]) for i in vial_set])
     vial['inj_file'] = np.append(vial['inj_file'], ([inj_file for i in vial_set]))
-
-
 
 vial['set_vial_num'] = np.asarray(list(range(1, len(vial['id1']) + 1)))
 
@@ -268,7 +305,6 @@ if 'dD' not in vial.keys():
 
 # -------------------- Quality control vial level data --------------------
 print('\n    Checking quality of vial level data.')
-
 
 # Quality control vial parameters may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
 #    run, you may need to adjust the vial quality control parameters in order to salvage your data.
@@ -294,7 +330,6 @@ if os.path.isfile(qcp_file):
 
 else:
     qcp = get_default_quality_control_parameters()
-
 
 
 #    Flag 1 == good data, Flag 0 == bad data. Notes indicate reason for bad data.
@@ -407,7 +442,7 @@ for i in ref_wat['id1_set']:
 
 
 # -------------------- Drift Correction --------------------
-if DRIFT_CORRECTION:
+if dpc['DRIFT_CORRECTION'] == 1:
     print(" *** Your data have been drift corrected *** ")
     ref_wat['dDresid_fit'] = np.polyfit(ref_wat['resid_index'], ref_wat['dD_resid_raw'], 1)
     vial['dD_drift_corr_factor'] = np.asarray(ref_wat['dDresid_fit'][0] * vial['vial_num'] + ref_wat['dDresid_fit'][1])
@@ -619,7 +654,12 @@ ax.set_ylabel('dD residual (permil)')
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=6)
 pplt.savefig(os.path.join(report_dir, fig_dir, figname))
 pplt.close()
-caption = f'''dD residual in permil versus vial number. Residual is the individual vial mean subtracted from the mean of all vials within a reference water type. This helps identify drift across the entire run or set of runs.'''
+caption = f'''dD residual in permil versus vial number. Residual is the individual
+              vial mean subtracted from the mean of all vials within a reference water type. This helps
+              identify drift across the entire run or set of runs. The residual is calculated using the raw
+              measured instrument values. The standard deviation of all non-drift-corrected dD residual values
+              on this figure is {str(round(np.std(ref_wat['dD_resid_raw']), 3))}. The standard deviation of
+              all VSMOW-SLAP normalized dD residual values is {str(round(np.std(ref_wat['dD_resid_vsmow']), 3))}.'''
 captions.append(f'Figure {fig_num}. {caption}')
 thumbcaption = 'dD_resid_raw'
 thumbcaptions.append(thumbcaption)
@@ -671,7 +711,7 @@ caption = f'''d18O residual in permil versus vial number. Residual is the indivi
               identify drift across the entire run or set of runs. The residual is calculated using the raw
               measured instrument values. The standard deviation of all non-drift-corrected d18O residual values
               on this figure is {str(round(np.std(ref_wat['d18O_resid_raw']), 3))}. The standard deviation of
-              all drift-corrected d18O residual values is {str(round(np.std(ref_wat['d18O_resid_vsmow']), 3))}.'''
+              all VSMOW-SLAP normalized d18O residual values is {str(round(np.std(ref_wat['d18O_resid_vsmow']), 3))}.'''
 captions.append(f'Figure {fig_num}. {caption}')
 thumbcaption = 'd18O_resid_raw'
 thumbcaptions.append(thumbcaption)
@@ -759,16 +799,21 @@ ref_wat_block = ref_wat_block_str_1 + ref_wat_block_str_2
 
 data_quality_block_str_1 = str([f"""<tr><td>{i}</td><td>dD</td>
                                   <td>{round(np.std(dD_vsmow[eval(i.upper())['index']]) * 2, 3)}</td>
-                                  <td>{round(np.mean(dD_vsmow[eval(i.upper())['index']])-eval(i.upper())['dD'], 3)}</td></tr>
+                                  <td>{round(np.mean(dD_vsmow[eval(i.upper())['index']])-eval(i.upper())['dD'], 3)}</td>
+                                  <td>{len(eval(i.upper())['index'])}</td></tr>
                               <tr><td>{i}</td><td>d18O</td>
                                   <td>{round(np.std(d18O_vsmow[eval(i.upper())['index']]) * 2, 3)}</td>
-                                  <td>{round(np.mean(d18O_vsmow[eval(i.upper())['index']])-eval(i.upper())['d18O'], 3)}</td></tr>
+                                  <td>{round(np.mean(d18O_vsmow[eval(i.upper())['index']])-eval(i.upper())['d18O'], 3)}</td>
+                                  <td>{len(eval(i.upper())['index'])}</td>
+                                  <td> </td></tr>
                            """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 if instrument['O17_flag']:
     data_quality_block_str_2 = str([f"""<tr><td>{i}</td><td>D17O</td>
                                       <td>{round(np.std(D17O_vsmow[eval(i.upper())['index']]) * 2, 1)}</td>
-                                      <td>{round(np.mean(D17O_vsmow[eval(i.upper())['index']])-eval(i.upper())['D17O'], 3)}</td></tr>
+                                      <td>{round(np.mean(D17O_vsmow[eval(i.upper())['index']])-eval(i.upper())['D17O'], 3)}</td>
+                                      <td>{len(eval(i.upper())['index'])}</td>
+                                      <td> </td></tr>
                                """ for i in ref_wat['qaqc']]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "").replace("\\n", "")
 
 if instrument['O17_flag']:
@@ -825,7 +870,7 @@ header = f"""
         <p>A suite of mathmatical operations were completed on these data prior to claiming they are final. High resolution one-second data are
         summarized to provide injection level data. The injection level data are then summarized to provide individual vial level data. This
         particular run or set of runs was set up to complete <strong>{np.max(inj['inj_num'])} injections per vial.</strong> The first
-        <strong>{FIRST_INJECTIONS_TO_IGNORE} injections of each vial were ignored</strong> as a simplistic way of dealing with carry-over or memory. The vial is
+        <strong>{dpc['FIRST_INJECTIONS_TO_IGNORE']} injections of each vial were ignored</strong> as a simplistic way of dealing with carry-over or memory. The vial is
         considered the sample and a single replicate. Vial level isotopic data are drift corrected - this is a correction based on all reference waters
         and is assumed to be linear with time. Drift corrected vial level isotopic data are then normalized to the VSMOW-SLAP scale using accepted
         values of at least two of the included reference waters. A correction for water vapor concentration is not built into this scheme at present
@@ -857,11 +902,11 @@ header = f"""
     </div>
 
     <h2>Data quality</h2>
-    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].upper())['names']}. Precision is
+    <div class="text-indent"><p>Precision and accuracy estimates are derived from reference water {eval(ref_wat['qaqc'][0].upper())['names'][0]}. Precision is
         <strong>two standard deviations</strong> over all replicates of the quality control reference water. Accuracy is the difference of the mean of all replicates of the
         quality control reference water from the accepted value.</p>
         <table>
-            <tr><th> </th><th> </th><th>Precision</th><th>Accuracy</th></tr>
+            <tr><th>Reference<br>Water</th><th>delta</th><th>Precision</th><th>Accuracy</th><th>n</th></tr>
             {data_quality_block}
         </table>
     </div>
