@@ -14,16 +14,19 @@ peak detection settings file and imported as pds.
 Version 2.1 has project and tray removed from tray description file
 
 Version 2.2 fixed a bokeh bug that snuck in regarding inability to serialize range.
+
+Version 2.3 found case where the peak detection settings (pds) were not beings used and they should have been
+
+Version 2.4 provisionally added peak['end_v2'] in an attempt to diversify finding the end of peaks
 """
 
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-05-13"
-__version__ = "2.2"
+__last_modified__ = "2024-09-01"
+__version__ = "2.4"
 __copyright__ = "Copyright 2024, Andy Schauer"
 __license__ = "Apache 2.0"
-__acknowledgements__ = "M. Sliwinski, H. Lowes-Bicay, N. Brown"
 
 
 # -------------------- imports --------------------
@@ -39,6 +42,7 @@ import numpy as np
 import os
 from picarro_lib import *
 from scipy.signal import find_peaks
+from scipy.signal import argrelextrema
 import shutil
 import sys
 import time as t
@@ -326,6 +330,22 @@ peak['end'] = peak['trough'][np.where(np.diff(peak['trough'])>pds['trough_diff']
 
 peak['width'] = peak['end'] - peak['start']
 
+
+dH2O_dT_local_min_indices = argrelextrema(dH2O_dT, np.less)[0]
+dH2O_dT_extreme_local_min_indices = [i for i in dH2O_dT_local_min_indices if dH2O_dT[i]<-200]
+last_added_index = dH2O_dT_extreme_local_min_indices[0]
+dH2O_dT_extreme_local_min_indices_filtered = [last_added_index]
+for i in dH2O_dT_extreme_local_min_indices:
+    if i - last_added_index >= 100:
+        dH2O_dT_extreme_local_min_indices_filtered.append(i)
+        last_added_index = i
+
+if len(dH2O_dT_extreme_local_min_indices_filtered)==len(peak['end']):
+    print('\n\n    ...good things have just happened...\n\n')
+    peak['end_v2'] = np.asarray(dH2O_dT_extreme_local_min_indices_filtered) 
+
+
+
 i=0
 meanpeakwidth = int(np.round(np.mean(peak['width']), 0))
 meanH2Opeak = np.zeros(meanpeakwidth)
@@ -336,15 +356,26 @@ while i < meanpeakwidth:
 dmeanH2Opeak = np.diff(meanH2Opeak)
 dmeanH2Opeak = np.append(dmeanH2Opeak, dmeanH2Opeak[-1])
 max_increase = np.where(dmeanH2Opeak == np.max(dmeanH2Opeak))[0]
-# min_decrease = np.where(dmeanH2Opeak == np.min(dmeanH2Opeak))[0] # this is the default, the below line was used to offset some datasets that exhibit a steep decline at the start of the peak
-min_decrease = np.where(dmeanH2Opeak[20:] == np.min(dmeanH2Opeak[20:]))[0]+20
+min_decrease = np.where(dmeanH2Opeak == np.min(dmeanH2Opeak))[0] # this is the default, the below line was used to offset some datasets that exhibit a steep decline at the start of the peak
+# min_decrease = np.where(dmeanH2Opeak[20:] == np.min(dmeanH2Opeak[20:]))[0]+20
 dmeanH2Opeak_dT2 = np.diff(dmeanH2Opeak)
 dmeanH2Opeak_dT2 = np.append(dmeanH2Opeak_dT2, dmeanH2Opeak_dT2[-1])
 meanH2Opeaktop = np.where(abs(dmeanH2Opeak_dT2[max_increase[0]:min_decrease[0]]) < 20)[0]            # I would prefer to have "20" be a measured value, but for now, it is fixed and attempts to estimate a low-ish value for acceleration that seems appropriate for the top of the peak
-trim_start = max_increase[0] + meanH2Opeaktop[10]                                                    # the "[10]" is an effort to offset from the start of the measured top
-trim_end = len(meanH2Opeak) - meanH2Opeaktop[-2]                                                     # the "[-2]" is an effort to offset from the end of the measured top
-peak['top_start'] = peak['start'] + trim_start
-peak['top_end'] = peak['end'] - trim_end
+
+if pds['trim_start'] == 10:
+    pds['trim_start'] = int(max_increase[0] + meanH2Opeaktop[10])                                                    # the "[10]" is an effort to offset from the start of the measured top
+
+peak['top_start'] = peak['start'] + pds['trim_start']
+
+if 'end_v2' in peak:
+    pds['trim_end'] = 10
+    peak['top_end'] = peak['end_v2'] - pds['trim_end']
+
+else:
+    pds['trim_end'] = int(len(meanH2Opeak) - meanH2Opeaktop[-2])                                                     # the "[-2]" is an effort to offset from the end of the measured top
+    peak['top_end'] = peak['end'] - pds['trim_end']
+
+
 
 peak['separation'] = peak['start'][1:] - peak['end'][0:-1]
 peak_separation_mode = calc_mode(peak['separation'], 0)
@@ -367,7 +398,6 @@ for i in range(len(peak['top_start'])):
 if len(to_be_deleted)>0:
     peak['top_start'] = np.delete(peak['top_start'], to_be_deleted)
     peak['top_end'] = np.delete(peak['top_end'], to_be_deleted)
-
 
 
 # -------------------- Screen gdi set for outliers --------------------
@@ -445,8 +475,12 @@ with warnings.catch_warnings():
 
 
 # -------------------- compare detected injections with expected injections from tray description --------------------
-detected_inj = len(inj['H2O']['mean'])
+# save injection detection parameters and tell user to edit them
+with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', newline='') as f:
+    json.dump(pds, f, indent=2)
 
+
+detected_inj = len(inj['H2O']['mean'])
 
 if np.sum(expected_inj) != detected_inj:
 
@@ -454,9 +488,6 @@ if np.sum(expected_inj) != detected_inj:
     print(f"\n ** Expecting {np.sum(expected_inj)} injections. Found {detected_inj} injections. Look carefully at the figure to assess what went wrong. **")
     t.sleep(2)
 
-    # save injection detection parameters and tell user to edit them
-    with open(os.path.join(run_dir, 'peak_detection_settings.json'), 'w', newline='') as f:
-        json.dump(pds, f, indent=2)
 
     fig_a = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
     fig_a.circle(adi, H2O, color="black", legend_label="All data", size=2)
