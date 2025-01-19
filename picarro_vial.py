@@ -15,14 +15,13 @@ Version 1.7 mod date 2023.11.28 => removed project from data stream
 version 1.8 mod date 2024.05.03 => renamed name to names from change in reference_materials.json file
 version 1.9 mod date 2024.05.14 => removed copytree in favor of makedirs; changed archive dir to be within the run directory
 version 1.91 mod date 2024.08.26 => bug in vial sorting when analyzing by set; found another potential bug in the injection filtering step where it should have been ignoring injections with a flag of 0 but it was including them flag>=0. Not sure how that one krept in; added number of injections from start of vial to pitch to the qcp file; also added drift correction choice to the qcp file
-version 1.92 mod date 2024.09.01 => added secondary end of peak detection that may eventually make its way into the main pathway
-"""
+Version 1.92 mod date 2024.09.01 => added secondary end of peak detection that may eventually make its way into the main pathway"""
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
 __last_modified__ = "2024-09-01"
-__version__ = "1.91"
-__copyright__ = "Copyright 2024, Andy Schauer"
+__version__ = "1.92"
+__copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
 

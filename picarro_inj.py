@@ -17,15 +17,16 @@ Version 2.2 fixed a bokeh bug that snuck in regarding inability to serialize ran
 
 Version 2.3 found case where the peak detection settings (pds) were not beings used and they should have been
 
-Version 2.4 provisionally added peak['end_v2'] in an attempt to diversify finding the end of peaks
+Version 2.4 provisionally added peak['end_v2'] in an attempt to diversify finding the end of peaks, added comments and a new log file so that I know when
+      this end_v2 is used.
 """
 
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-09-01"
+__last_modified__ = "2024-09-20"
 __version__ = "2.4"
-__copyright__ = "Copyright 2024, Andy Schauer"
+__copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
 
@@ -51,6 +52,29 @@ import webbrowser
 
 
 # -------------------- functions ------------------------------------
+
+def flatten_dict_of_dicts(input_dict):
+    flattened_dict = {}
+
+    for key, value in input_dict.items():
+        if isinstance(value, dict):
+            # Flatten the inner dictionary
+            for sub_key, sub_value in value.items():
+                # Combine parent key and sub_key, flatten into lists
+                new_key = f"{key}.{sub_key}"
+                if isinstance(sub_value, list):
+                    flattened_dict[new_key] = sub_value
+                else:
+                    flattened_dict[new_key] = [sub_value]
+        elif isinstance(value, list):
+            # If value is already a list, keep it
+            flattened_dict[key] = value
+        else:
+            # Otherwise, wrap single value into a list
+            flattened_dict[key] = [value]
+    
+    return flattened_dict
+
 
 def get_peak_detection_settings():
     # Peak detection settings may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
@@ -331,6 +355,9 @@ peak['end'] = peak['trough'][np.where(np.diff(peak['trough'])>pds['trough_diff']
 peak['width'] = peak['end'] - peak['start']
 
 
+
+# This section was added 240901 in an attempt to cull extra points that are sometimes included after the formal end of the peak. I would say it is still
+#    in beta testing but so far it seems to work.
 dH2O_dT_local_min_indices = argrelextrema(dH2O_dT, np.less)[0]
 dH2O_dT_extreme_local_min_indices = [i for i in dH2O_dT_local_min_indices if dH2O_dT[i]<-200]
 last_added_index = dH2O_dT_extreme_local_min_indices[0]
@@ -339,10 +366,14 @@ for i in dH2O_dT_extreme_local_min_indices:
     if i - last_added_index >= 100:
         dH2O_dT_extreme_local_min_indices_filtered.append(i)
         last_added_index = i
-
 if len(dH2O_dT_extreme_local_min_indices_filtered)==len(peak['end']):
-    print('\n\n    ...good things have just happened...\n\n')
-    peak['end_v2'] = np.asarray(dH2O_dT_extreme_local_min_indices_filtered) 
+    print('\n\n    *** Good things have just happened ! ***')
+    print('        - Extra points were erroneously included at the end of some injections.')
+    print('        - This bit of code removed them....I hope :| \n\n')
+    with open(os.path.join(python_dir, 'picarro_inj_EXTRA_POINTS_LOG.txt'), 'a') as log:
+        log.write(f'{str(dt.datetime.now())} - {run_dir}\n')
+    peak['end_v2'] = np.asarray(dH2O_dT_extreme_local_min_indices_filtered)
+
 
 
 
@@ -720,3 +751,19 @@ else:
 
     with open(os.path.join(run_dir, f'{hdf5_file[0:-5]}_{dcc}_injections.json'), 'w') as fp:
         json.dump(inj_export, fp)
+
+
+    # --------------------- write a coordinator like data file --------------------------
+
+    import csv
+
+    flattened_inj_export = flatten_dict_of_dicts(inj_export)
+
+    with open(os.path.join(run_dir, "coordinator-ish_file.csv"), mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=flattened_inj_export.keys())
+        
+        # Write the header
+        writer.writeheader()
+        
+        # Write the rows
+        writer.writerows(flattened_inj_export)
