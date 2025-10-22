@@ -21,8 +21,8 @@ picarro_vial.py.
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2023-07-24"
-__version__ = "1.7"
+__last_modified__ = "2025.10.20"
+__version__ = "3.0"
 __copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
@@ -118,7 +118,8 @@ def get_instrument():
             instrument = {
                 'name': 'Abel',
                 'model': 'L2130i',
-                'O17_flag': False}
+                'O17_flag': False,
+                'h5_shape': 4500}
             instrument['ref_ratios'] = {
                 'rDHi': 0.1744,
                 'r1816i': 1.7540,
@@ -130,21 +131,24 @@ def get_instrument():
             instrument = {
                 'name': 'DeSoto',
                 'model': 'L2120i',
-                'O17_flag': False}
+                'O17_flag': False,
+                'h5_shape': 4500}
 
         elif entered_name == 'mildred':
             name_recognized = True
             instrument = {
                 'name': 'Mildred',
                 'model': 'L2140i',
-                'O17_flag': True}
+                'O17_flag': True,
+                'h5_shape': 5050}
 
         elif entered_name == 'phoenix':
             name_recognized = True
             instrument = {
                 'name': 'Phoenix',
                 'model': 'L2140i',
-                'O17_flag': True}
+                'O17_flag': True,
+                'h5_shape': 4500}
             instrument['ref_ratios'] = {
                 'rDHi': 0.1509,
                 'r1816i': 1.6954,
@@ -156,7 +160,8 @@ def get_instrument():
             instrument = {
                 'name': 'Gower',
                 'model': 'L2130i',
-                'O17_flag': False}
+                'O17_flag': False,
+                'h5_shape': 4500}
 
         elif entered_name == 'not_listed':
             name_recognized = True
@@ -175,7 +180,8 @@ def get_instrument():
             instrument = {
                 'name': name,
                 'model': 'unknown',
-                'O17_flag': O17_flag}
+                'O17_flag': O17_flag,
+                'h5_shape': 4500}
 
         else:
             print('\nInstrument not recognized.')

@@ -24,8 +24,8 @@ Version 2.4 provisionally added peak['end_v2'] in an attempt to diversify findin
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-09-20"
-__version__ = "2.4"
+__last_modified__ = "2025.10.20"
+__version__ = "3.0"
 __copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
@@ -52,29 +52,6 @@ import webbrowser
 
 
 # -------------------- functions ------------------------------------
-
-def flatten_dict_of_dicts(input_dict):
-    flattened_dict = {}
-
-    for key, value in input_dict.items():
-        if isinstance(value, dict):
-            # Flatten the inner dictionary
-            for sub_key, sub_value in value.items():
-                # Combine parent key and sub_key, flatten into lists
-                new_key = f"{key}.{sub_key}"
-                if isinstance(sub_value, list):
-                    flattened_dict[new_key] = sub_value
-                else:
-                    flattened_dict[new_key] = [sub_value]
-        elif isinstance(value, list):
-            # If value is already a list, keep it
-            flattened_dict[key] = value
-        else:
-            # Otherwise, wrap single value into a list
-            flattened_dict[key] = [value]
-    
-    return flattened_dict
-
 
 def get_peak_detection_settings():
     # Peak detection settings may be customized depending on the instrument or run. If you had odd backgrounds or otherwise a non-optimal
@@ -387,8 +364,8 @@ while i < meanpeakwidth:
 dmeanH2Opeak = np.diff(meanH2Opeak)
 dmeanH2Opeak = np.append(dmeanH2Opeak, dmeanH2Opeak[-1])
 max_increase = np.where(dmeanH2Opeak == np.max(dmeanH2Opeak))[0]
-min_decrease = np.where(dmeanH2Opeak == np.min(dmeanH2Opeak))[0] # this is the default, the below line was used to offset some datasets that exhibit a steep decline at the start of the peak
-# min_decrease = np.where(dmeanH2Opeak[20:] == np.min(dmeanH2Opeak[20:]))[0]+20
+#min_decrease = np.where(dmeanH2Opeak == np.min(dmeanH2Opeak))[0] # this is the default, the below line was used to offset some datasets that exhibit a steep decline at the start of the peak
+min_decrease = np.where(dmeanH2Opeak[20:] == np.min(dmeanH2Opeak[20:]))[0]+20
 dmeanH2Opeak_dT2 = np.diff(dmeanH2Opeak)
 dmeanH2Opeak_dT2 = np.append(dmeanH2Opeak_dT2, dmeanH2Opeak_dT2[-1])
 meanH2Opeaktop = np.where(abs(dmeanH2Opeak_dT2[max_increase[0]:min_decrease[0]]) < 20)[0]            # I would prefer to have "20" be a measured value, but for now, it is fixed and attempts to estimate a low-ish value for acceleration that seems appropriate for the top of the peak
@@ -402,8 +379,10 @@ if 'end_v2' in peak:
     pds['trim_end'] = 10
     peak['top_end'] = peak['end_v2'] - pds['trim_end']
 
-else:
+elif pds['trim_start'] == 10:
     pds['trim_end'] = int(len(meanH2Opeak) - meanH2Opeaktop[-2])                                                     # the "[-2]" is an effort to offset from the end of the measured top
+    peak['top_end'] = peak['end'] - pds['trim_end']
+else:
     peak['top_end'] = peak['end'] - pds['trim_end']
 
 
@@ -521,10 +500,10 @@ if np.sum(expected_inj) != detected_inj:
 
 
     fig_a = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    fig_a.circle(adi, H2O, color="black", legend_label="All data", size=2)
-    fig_a.circle(gdi, H2O[gdi], color="yellow", legend_label="Data identified as good but...", size=6)
-    fig_a.circle(peak['top_start'], H2O[peak['top_start']], color="green", size=6, legend_label="Start of each injection")
-    fig_a.circle(peak['top_end'], H2O[peak['top_end']], color="red", size=6, legend_label="End of each injection")
+    fig_a.scatter(adi, H2O, marker='circle', color="black", legend_label="All data", size=2)
+    fig_a.scatter(gdi, H2O[gdi], marker='circle', color="yellow", legend_label="Data identified as good but...", size=6)
+    fig_a.scatter(peak['top_start'], H2O[peak['top_start']], marker='circle', color="green", size=6, legend_label="Start of each injection")
+    fig_a.scatter(peak['top_end'], H2O[peak['top_end']], marker='circle', color="red", size=6, legend_label="End of each injection")
     fig_a_caption = f"""Figure A. Water concentration during your run."""
 
     fig_b = figure(width=1100, height=700,
@@ -533,10 +512,10 @@ if np.sum(expected_inj) != detected_inj:
                    y_axis_label="d18O raw (permil)",
                    tools="pan, box_zoom, reset, save",
                    active_drag="box_zoom")
-    fig_b.circle(adi, d18O, color="black", legend_label="All data", size=2)
-    fig_b.circle(gdi, d18O[gdi], color="yellow", legend_label="Data identified as good but...", size=6)
-    fig_b.circle(peak['top_start'], d18O[peak['top_start']], color="green", size=6, legend_label="Start of each injection")
-    fig_b.circle(peak['top_end'], d18O[peak['top_end']], color="red", size=6, legend_label="End of each injection")
+    fig_b.scatter(adi, d18O, marker='circle', color="black", legend_label="All data", size=2)
+    fig_b.scatter(gdi, d18O[gdi], marker='circle', color="yellow", legend_label="Data identified as good but...", size=6)
+    fig_b.scatter(peak['top_start'], d18O[peak['top_start']], marker='circle', color="green", size=6, legend_label="Start of each injection")
+    fig_b.scatter(peak['top_end'], d18O[peak['top_end']], marker='circle', color="red", size=6, legend_label="End of each injection")
     fig_b_caption = f"""Figure 3. Oxygen-18 isotope composition (d18O or delta 18 Oh)."""
 
     # -------------------- make mismatch html page --------------------
@@ -631,9 +610,9 @@ else:
 
     # -------------------- make high resolution data figures --------------------
     fig1 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="H2O (ppmv)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    fig1.circle(adi, H2O, color="black", legend_label="All data", size=2)
-    fig1.circle(gdi, H2O[gdi], color="green", legend_label="Good data", size=6)
-    fig1.circle(fdi, H2O[fdi], color="yellow", legend_label="Flagged data", size=6)
+    fig1.scatter(adi, H2O, marker='circle', color="black", legend_label="All data", size=2)
+    fig1.scatter(gdi, H2O[gdi], marker='circle', color="green", legend_label="Good data", size=6)
+    fig1.scatter(fdi, H2O[fdi], marker='circle', color="yellow", legend_label="Flagged data", size=6)
     fig1_caption = f"""Figure 1. Water concentration during your run where each injection peak top is shown
                        in green. Reasonable injection water concentrations range from 17000 to 23000 ppmv.
                        Injections with an H2O standard deviation above {qcp['max_H2O_std']} are <a href="#flagged_injections">flagged</a>."""
@@ -650,14 +629,14 @@ else:
                   y_axis_label="dD raw (permil)",
                   tools="pan, box_zoom, reset, save",
                   active_drag="box_zoom")
-    fig3.circle(adi, dD, color="black", legend_label="All data", size=2)
-    fig3.circle(gdi, dD[gdi], color="green", legend_label="Good data", size=6)
-    fig3.circle(fdi, dD[fdi], color="yellow", legend_label="Flagged data", size=6)
+    fig3.scatter(adi, dD, marker='circle', color="black", legend_label="All data", size=2)
+    fig3.scatter(gdi, dD[gdi], marker='circle', color="green", legend_label="Good data", size=6)
+    fig3.scatter(fdi, dD[fdi], marker='circle', color="yellow", legend_label="Flagged data", size=6)
     fig3_caption = f"""Figure 3. Hydrogen isotope composition (dD or delta Dee). Injections with a standard
                        deviation greater than {qcp['max_dD_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig4 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="dD - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    [fig4.circle(np.asarray(range(i-i,j-i)), np.asarray(dD[range(i,j)]-np.mean(dD[range(j-20,j)])), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    [fig4.scatter(np.asarray(range(i-i,j-i)), np.asarray(dD[range(i,j)]-np.mean(dD[range(j-20,j)])), marker='circle', size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
     fig4_caption = f"""Figure 4. dD departure from the final 20 measurements of each top of injection peak."""
 
     fig5 = figure(width=1100, height=700,
@@ -666,14 +645,14 @@ else:
                   y_axis_label="d18O raw (permil)",
                   tools="pan, box_zoom, reset, save",
                   active_drag="box_zoom")
-    fig5.circle(adi, d18O, color="black", legend_label="All data", size=2)
-    fig5.circle(gdi, d18O[gdi], color="green", legend_label="Good data", size=6)
-    fig5.circle(fdi, d18O[fdi], color="yellow", legend_label="Flagged data", size=6)
+    fig5.scatter(adi, d18O, marker='circle', color="black", legend_label="All data", size=2)
+    fig5.scatter(gdi, d18O[gdi], marker='circle', color="green", legend_label="Good data", size=6)
+    fig5.scatter(fdi, d18O[fdi], marker='circle', color="yellow", legend_label="Flagged data", size=6)
     fig5_caption = f"""Figure 5. Oxygen-18 isotope composition (d18O or delta 18 Oh). Injections with a standard
                        deviation greater than {qcp['max_d18O_std']} permil are <a href="#flagged_injections">flagged</a>."""
 
     fig6 = figure(width=1100, height=700, x_axis_label="data index", y_axis_label="d18O - departure from the last 20 measurements (permil)", tools="pan, box_zoom, reset, save", active_drag="box_zoom")
-    [fig6.circle(np.asarray(range(i-i,j-i)), np.asarray(d18O[range(i,j)]-np.mean(d18O[range(j-20,j)])), size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
+    [fig6.scatter(np.asarray(range(i-i,j-i)), np.asarray(d18O[range(i,j)]-np.mean(d18O[range(j-20,j)])), marker='circle', size=2) for i,j in zip(peak['top_start'], peak['top_end'])]
     fig6_caption = f"""Figure 6. d18O departure from the final 20 measurements of each top of injection peak."""
 
     # -------------------- make html page --------------------
@@ -751,19 +730,3 @@ else:
 
     with open(os.path.join(run_dir, f'{hdf5_file[0:-5]}_{dcc}_injections.json'), 'w') as fp:
         json.dump(inj_export, fp)
-
-
-    # --------------------- write a coordinator like data file --------------------------
-
-    import csv
-
-    flattened_inj_export = flatten_dict_of_dicts(inj_export)
-
-    with open(os.path.join(run_dir, "coordinator-ish_file.csv"), mode='w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=flattened_inj_export.keys())
-        
-        # Write the header
-        writer.writeheader()
-        
-        # Write the rows
-        writer.writerows(flattened_inj_export)

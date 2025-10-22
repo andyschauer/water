@@ -12,12 +12,14 @@ a 'p' for picarro and an 'i' for isolab on any variable name having to do with a
 In version 1.4 adds the ability to import data from an instrument that is not explicitly listed.
 
 I made minor tweaks to the "not_listed" instrument type so I could reprocess old data with old directory structures
+
+Removed the mpl_connect strategy for selecting the start and stop. New method implemented.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-04-17"
-__version__ = "1.41"
+__last_modified__ = "2025.10.20"
+__version__ = "3.0"
 __copyright__ = "Copyright 2025, Andy Schauer"
 __license__ = "Apache 2.0"
 
@@ -27,6 +29,7 @@ import argparse
 from datetime import datetime
 import h5py
 import matplotlib.pyplot as pplt
+from matplotlib.widgets import SpanSelector, Button
 import numpy as np
 import os
 from picarro_lib import *
@@ -34,15 +37,10 @@ import time as t
 
 
 # -------------------- functions --------------------
-def fig_on_key(event):
-    """Gets the start and stop data point indices while looking at a figure of H2O and dD."""
-    global start, stop
-    if event.key == '1':
-        start = round(event.xdata)
-        print(f'start chosen as {start}')
-    elif event.key == '2':
-        stop = round(event.xdata)
-        print(f'stop chosen as {stop}')
+
+
+
+
 
 
 # -------------------- parse the three optional arguments --------------------
@@ -132,7 +130,8 @@ h5_dtype = h5_file['results'].dtype
 
 
 # -------------------- create an empty numpy array for every header --------------------
-preallocate_size = 4500 * len(file_list)  # The length of a one hour h5 file, if the spectral duration were 0.8 seconds, is 4500.
+
+preallocate_size = instrument['h5_shape'] * len(file_list)  # The length of a one hour h5 file, if the spectral duration were 0.8 seconds, is 4500.
 data = np.asarray(np.zeros(preallocate_size), dtype=h5_dtype)
 
 
@@ -144,7 +143,7 @@ for file in file_list:
     h5_file = h5py.File(f'{h5_dir}{file}')
     h5_data = h5_file['results']
     if len(h5_data.dtype) == len(headers):
-        print(f"{file}    =>    {len(h5_data.dtype)} data fields.")
+        print(f"{file}    =>    {len(h5_data.dtype)} data fields. Shape = {h5_data.shape}")
         total_size += h5_data.shape[0]
         stop = start + h5_data.shape[0]
         data[start:stop] = h5_data[:]
@@ -154,34 +153,148 @@ for file in file_list:
         t.sleep(0.1)
 
 
-# -------------------- Choose the exact start and stop data points by using the figures --------------------
-data_index = [i for i in range(0, len(data['H2O']))]
 
-WIDTH = 10
-HEIGHT = 8
+# -------------------- Choose the exact start and stop data indices for the run --------------------
+def _decimate(x, y, max_points=5000):
+    n = len(x)
+    if n <= max_points:
+        return np.asarray(x), np.asarray(y)
+    idx = np.linspace(0, n - 1, max_points).astype(int)
+    return np.asarray(x)[idx], np.asarray(y)[idx]
 
-fig = pplt.subplots(figsize=(WIDTH, HEIGHT))
-ax_top = pplt.subplot(211)
-ax_top.set_title("""Use either figure to pick where your dataset should start and stop.
-                 Hover over where you want the dataset to start and press 1. Then hover over where it should stop and press 2. Close the figure when you are done.""", wrap=True)
-ax_top.set_xlabel('h5_data point index')
-ax_top.set_ylabel('H2O (ppm)')
-ax_top.plot(data_index, data['H2O'])
-ax_bottom = pplt.subplot(212)
-ax_bottom.set_xlabel('h5_data point index')
-ax_bottom.set_ylabel('dD (permil)')
-ax_bottom.plot(data_index, data['Delta_D_H'])
-ax_bottom.set_ylim([-600,100])
+def _nearest_index(x_all, x_val):
+    x_all = np.asarray(x_all)
+    i = int(np.searchsorted(x_all, x_val))
+    if i <= 0:
+        return 0
+    if i >= len(x_all):
+        return len(x_all) - 1
+    return i if abs(x_all[i] - x_val) < abs(x_all[i-1] - x_val) else i-1
 
-cid = fig[0].canvas.mpl_connect('key_press_event', fig_on_key)
+def _coarse_window_two_axes(x, y1, y2, title):
+    xo, y1o = _decimate(x, y1)
+    _,  y2o = _decimate(x, y2)
 
-pplt.show()
+    sel = {"xmin": float(xo[0]), "xmax": float(xo[-1])}
+
+    def onselect(xmin, xmax):
+        if xmin > xmax:
+            xmin, xmax = xmax, xmin
+        sel["xmin"], sel["xmax"] = float(xmin), float(xmax)
+
+    fig, (ax1, ax2) = pplt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    ax1.plot(xo, y1o, rasterized=True)
+    ax1.set_ylabel('H2O (ppm)')
+    ax2.plot(xo, y2o, rasterized=True)
+    ax2.set_ylabel('dD (‰)')
+    ax2.set_xlabel('h5_data point index')
+    fig.suptitle(f"{title}: drag to bracket region; click 'Done' or close this window when finished.")
+
+    pplt.subplots_adjust(bottom=0.18)
+    done_ax = fig.add_axes([0.75, 0.05, 0.13, 0.07])
+    done_btn = Button(done_ax, 'Done')
+
+    def finish(event=None):
+        pplt.close(fig)
+
+    done_btn.on_clicked(finish)
+    span1 = SpanSelector(ax1, onselect, direction='horizontal', useblit=True, interactive=True,
+                         props=dict(alpha=0.25, facecolor='orange'))
+    span2 = SpanSelector(ax2, onselect, direction='horizontal', useblit=True, interactive=True,
+                         props=dict(alpha=0.25, facecolor='orange'))
+    pplt.show()
+
+    xmin, xmax = sel["xmin"], sel["xmax"]
+    if not np.isfinite(xmin) or not np.isfinite(xmax) or xmin == xmax:
+        mid = float(xo[len(xo)//2])
+        span = (xo[-1] - xo[0]) * 0.02
+        xmin, xmax = mid - span, mid + span
+    return xmin, xmax
+
+def _fine_pick(x_all, y1, y2, xmin, xmax, title):
+    fig, (ax1, ax2) = pplt.subplots(2, 1, figsize=(11, 6), sharex=True)
+    ax1.plot(x_all, y1)
+    ax1.set_ylabel('H2O (ppm)')
+    ax2.plot(x_all, y2)
+    ax2.set_ylabel('dD (‰)')
+    ax2.set_xlabel('h5_data point index')
+    for a in (ax1, ax2):
+        a.set_xlim(xmin, xmax)
+
+    pplt.subplots_adjust(bottom=0.18)
+    pick_ax = fig.add_axes([0.12, 0.05, 0.18, 0.07])
+    done_ax = fig.add_axes([0.75, 0.05, 0.13, 0.07])
+    pick_btn  = Button(pick_ax,  'Pick point')
+    done_btn  = Button(done_ax,  'Done')
+    picked = {"idx": None}
+    vlines = []
+
+    def _draw_vline(xv):
+        if not vlines:
+            vlines.extend([ax1.axvline(xv, linestyle='--', linewidth=1.5),
+                           ax2.axvline(xv, linestyle='--', linewidth=1.5)])
+        else:
+            for vl in vlines:
+                vl.set_xdata([xv, xv])
+        fig.canvas.draw_idle()
+
+    def do_pick(event):
+        pts = pplt.ginput(1, timeout=0)
+        if not pts:
+            return
+        xv = pts[0][0]
+        idx = _nearest_index(x_all, xv)
+        picked["idx"] = int(idx)
+        _draw_vline(x_all[picked["idx"]])
+
+    def finish(event):
+        pplt.close(fig)
+
+    pick_btn.on_clicked(do_pick)
+    done_btn.on_clicked(finish)
+
+    fig.suptitle(f"{title}: zoom/pan freely; when ready, click 'Pick point', click on the figure where the point is located; then click Done.")
+    pplt.show()
+
+    if picked["idx"] is None:
+        picked["idx"] = _nearest_index(x_all, ax1.get_xlim()[0])
+
+    return int(picked["idx"])
+
+
+def pick_start_stop(data_index, h2o, dD, *, overview_max_points=5000):
+    x = np.asarray(data_index)
+    y1 = np.asarray(h2o)
+    y2 = np.asarray(dD)
+
+    # START
+    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="CHOOSE START REGION")
+    start_idx = _fine_pick(x, y1, y2, xmin, xmax, title="CHOOSE START POINT")
+
+    # STOP
+    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="CHOOSE STOP REGION")
+    stop_idx = _fine_pick(x, y1, y2, xmin, xmax, title="CHOOSE STOP POINT")
+
+    if start_idx > stop_idx:
+        start_idx, stop_idx = stop_idx, start_idx
+
+    return start_idx, stop_idx
+
+
+data_index = np.arange(len(data['H2O']))
+start_idx, stop_idx = pick_start_stop(
+    data_index=data_index,
+    h2o=data['H2O'],
+    dD=data['Delta_D_H'],
+    overview_max_points=8000  # optional; bump if you want more detail in the overview
+)
+print(f"\nSTART: {start_idx}, STOP: {stop_idx}")
 
 
 # -------------------- Populate numpy arrays --------------------
 """Numpy arrays were preallocated above for each header. Populate those arrays with data within the start and stop range."""
 for header in headers:
-    globals()[header] = data[header][start:stop]
+    globals()[header] = data[header][start_idx:stop_idx]
 
 
 # -------------------- delta value calculation  --------------------
