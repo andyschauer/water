@@ -21,9 +21,8 @@ ToDo:
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2024-10-31"
-__version__ = "0.2"
-__copyright__ = "Copyright 2025, Andy Schauer"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
 __license__ = "Apache 2.0"
 
 

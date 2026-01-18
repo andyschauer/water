@@ -3,25 +3,12 @@
 This is the final script for discrete injection type data. It summarizes injections from individual vials
 and then calibrates dD, d18O, (and d17O if using a L2140i) to the VSMOW-SLAP scale. Ideally, picarro_h5.py and
 picarro_inj.py were run prior to the present script.
-
-Version 1.3 mod date 2023-02-14 => found bug in no drift correction on L2130 instrument. Fixed.
-Version 1.4 mod date 2023-05-07 => found bug when a reference water had a null value. Changed to np.nan. Seems to work fine now.
-Version 1.41 mod date 2023.05.30 => minor change of "water" to "waters" with respect to the reference materials json file. I
-    updated the refmat file for broader reach.
-Version 1.5 mod date 2023.06.28 => added tray description file to report directory and report
-Version 1.6 mod date 2023.08.01 => added memory calculation
-Version 1.61 mod date 2023.10.17 => bug in memory calculation when considering analyses as a set, fix is creating combined injection array for deltas
-Version 1.7 mod date 2023.11.28 => removed project from data stream
-version 1.8 mod date 2024.05.03 => renamed name to names from change in reference_materials.json file
-version 1.9 mod date 2024.05.14 => removed copytree in favor of makedirs; changed archive dir to be within the run directory
-version 1.91 mod date 2024.08.26 => bug in vial sorting when analyzing by set; found another potential bug in the injection filtering step where it should have been ignoring injections with a flag of 0 but it was including them flag>=0. Not sure how that one krept in; added number of injections from start of vial to pitch to the qcp file; also added drift correction choice to the qcp file
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2025.10.20"
-__version__ = "3.0"
-__copyright__ = "Copyright 2025, Andy Schauer"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
 __license__ = "Apache 2.0"
 
 
@@ -58,12 +45,6 @@ def fig_in_html(fhp, figname, caption):
 
 
 def get_default_quality_control_parameters():
-    # qcp = {'max_H2O_std': round(calc_mode(vial['H2O']['std'], -1) * 4.4, 0),
-    #        'max_d18O_std': round(calc_mode(vial['d18O']['std'], 2) * 4.4, 3),
-    #        'max_dD_std': round(calc_mode(vial['dD']['std'], 2) * 4.4, 2)}
-    # if instrument['O17_flag']:
-    #     qcp['max_d17O_std'] = round(calc_mode(vial['d17O']['std'], 2) * 4.4, 3)
-
     qcp = {'max_H2O_std': round(np.nanmean(vial['H2O']['std']) * 4.4, 0),
            'max_d18O_std': round(np.nanmean(vial['d18O']['std']) * 4.4, 3),
            'max_dD_std': round(np.nanmean(vial['dD']['std']) * 4.4, 2)}
@@ -219,6 +200,10 @@ else:
 print(f"\n        FIRST_INJECTIONS_TO_IGNORE = {dpc['FIRST_INJECTIONS_TO_IGNORE']}")
 print(f"\n        DRIFT_CORRECTION = {dpc['DRIFT_CORRECTION']}")
 
+if dpc['DRIFT_CORRECTION']==0:
+    drift_correction_string = 'NOT completed'
+else:
+    drift_correction_string = 'linear drift correction completed'
 
 
 # -------------------- Load injection level data from json data file(s) and summarize to vial level data --------------------
@@ -227,6 +212,8 @@ inj_extra_list = ['n_high_res', 'H2O_time_slope', 'dD_time_slope', 'd18O_time_sl
 
 
 dD_for_memory = np.empty(0)
+# d17O_for_memory = np.empty(0)
+d18O_for_memory = np.empty(0)
 total_vials = 0
 for inj_file in inj_file_list:
     # read in injections file(s)
@@ -258,6 +245,8 @@ for inj_file in inj_file_list:
             globals()[key] = np.asarray(inj[key])
 
     dD_for_memory = np.append(dD_for_memory, inj['Delta_D_H']['mean'])
+    # d17O_for_memory = np.append(d17O_for_memory, inj['Delta_17_16']['mean'])
+    d18O_for_memory = np.append(d18O_for_memory, inj['Delta_18_16']['mean'])
 
     # -------------------- summarize vial level data --------------------
     vial_set = list(set(inj['vial_num']))
@@ -565,29 +554,11 @@ else:
 
 
 # -------------------- Memory -------------------
-# delta = dD_for_memory
-# dDmemory = {
-	# 'vial_to_vial_range': np.zeros(len(vial['vial_num'])),
-	# 'within_vial_range': np.zeros(len(vial['vial_num'])),
-	# 'vial_memory': np.zeros(len(vial['vial_num']))}
-# n=0
-# for i in range(1, len(vial['vial_num'])):
-	# v0_injs = int(vial['total_inj'][i-1])
-	# v0 = np.asarray(range(n, n + v0_injs))
-	# v1_injs = int(vial['total_inj'][i])
-	# v1 = np.asarray(range(n + v0_injs, n + v0_injs + v1_injs))
-	# dDmemory['vial_to_vial_range'][i] = np.abs(np.mean(np.asarray(delta)[v1][-2:]) - np.mean(np.asarray(delta)[v0][-2:]))
-	# dDmemory['within_vial_range'][i] = np.abs(np.asarray(delta)[v1][0] - np.mean(np.asarray(delta)[v1][-2:]))
-	# dDmemory['vial_memory'][i] = 1 - ((dDmemory['vial_to_vial_range'][i] - dDmemory['within_vial_range'][i]) / dDmemory['vial_to_vial_range'][i])
-	# dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
-	# fig, ax = pplt.subplots()
-	# ax.plot(v0, delta[v0], 'ro')
-	# ax.plot(v1, delta[v1], 'bo')
-	# pplt.show()
-	# n+=(v0_injs)
-
 dDmemory = memory_calc(dD_for_memory)
 dDmemory['mean'] = np.mean(dDmemory['vial_memory'][np.where(dDmemory['vial_to_vial_range']>10)])
+
+d18Omemory = memory_calc(d18O_for_memory)
+d18Omemory['mean'] = np.mean(d18Omemory['vial_memory'][np.where(d18Omemory['vial_to_vial_range']>5)])
 
 
 # -------------------- Get ready to make report -------------------
@@ -866,14 +837,30 @@ header = f"""
 
     <h2>Data operations</h2>
     <div class="text-indent">
-        <p>A suite of mathmatical operations were completed on these data prior to claiming they are final. High resolution one-second data are
-        summarized to provide injection level data. The injection level data are then summarized to provide individual vial level data. This
-        particular run or set of runs was set up to complete <strong>{np.max(inj['inj_num'])} injections per vial.</strong> The first
-        <strong>{dpc['FIRST_INJECTIONS_TO_IGNORE']} injections of each vial were ignored</strong> as a simplistic way of dealing with carry-over or memory. The vial is
-        considered the sample and a single replicate. Vial level isotopic data are drift corrected - this is a correction based on all reference waters
-        and is assumed to be linear with time. Drift corrected vial level isotopic data are then normalized to the VSMOW-SLAP scale using accepted
-        values of at least two of the included reference waters. A correction for water vapor concentration is not built into this scheme at present
-        given the consistency of injection sizes and the reasonably sound correction that already exists within the picarro software.
+        <p>A suite of mathmatical operations were completed on these data prior to claiming they are final. Individual .h5 files are combined into a single
+        .hdf5 file by selecting a start and end of the run (picarro_h5.py). High resolution one-second data are
+        summarized to provide injection level data (picarro_inj.py). The injection level data are then summarized to provide individual vial level data (picarro_vial.py). 
+        This run was completed by conducting {np.max(inj['inj_num'])} injections per vial. You would need to rerun the samples and increase this in the autosampler job 
+        if you would like more injections per vial.</em>
+
+        Here are data processing choices - <em>how to change them</em> - <span class="script-font">scripts to run to implement your change</span>:
+
+        <ul>
+            <li><strong>Injections ignored per vial</strong>: {dpc['FIRST_INJECTIONS_TO_IGNORE']} - <em>open {run_dir}/data_processing_choices.json in a text editor and update as desired</em> - <span class="script-font">picarro_vial.py</span></li>
+            <li><strong>Drift Correction</strong>: {drift_correction_string} - <em>open {run_dir}/data_processing_choices.json in a text editor and update as desired. 0 = NO, do not do a drift correction; 1 = YES, do a drift correction </em> - <span class="script-font">picarro_vial.py</span></li>
+            <li><strong>Vial level quality control parameters</strong> - <em>open {run_dir}/quality_control_parameters_vial.json in a text editor and update as desired. NOTE - these values are either default or empirically derived from your data.</em> - <span class="script-font">picarro_vial.py</span>:
+                <ul>
+                    <li>Maximum acceptable H2O standard deviation (max_H2O_std): {qcp['max_H2O_std']}</li>
+                    <li>Maximum acceptable d18O standard deviation (max_d18O_std): {qcp['max_d18O_std']}</li>
+                    <li>Maximum acceptable dD standard deviation (max_dD_std): {qcp['max_dD_std']}</li>
+                </ul>
+            </li>
+            <li><strong>Injection quality control</strong> - <em>open {run_dir}/quality_control_parameters_inj.json in a text editor and update as desired. NOTE - these values are either default or empirically derived from your data.</em> - <span class="script-font">picarro_inj.py and picarro_vial.py</span>
+                <ul>
+                    <li>see injection level report</li>
+                </ul>
+            </li>
+        </ul>
         </p>
     </div>
 

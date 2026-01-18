@@ -35,6 +35,10 @@ h2,h3{
     margin-left:2rem;
 }
 
+.script-font {
+        font-family: Courier;
+        font-style: italic;
+}
 
 /* tables */
 table{
@@ -56,8 +60,8 @@ table tr:hover {
 
 .figThumb{
 	float:left;
-	margin: 0;
-	padding:0;
+	margin: 1rem;
+	padding:1rem;
 }
 
 .figThumb img{

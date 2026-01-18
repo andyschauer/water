@@ -5,22 +5,12 @@ Hierarchical Data Format) contain data at about 1 Hz frequency. This script simp
 range of h5 files, allows the user to trim the ends and then saves the dataset as a new hdf5 file. While
 this script was written with Picarro's water isotope instruments in mind, in principle, it should work for
 any Picarro CRDS instrument.
-
-In version 1.3, I am not explicitly keeping track of picarro vs isolab delta value calculations by adding
-a 'p' for picarro and an 'i' for isolab on any variable name having to do with a delta calculation (e.g., d18Oi).
-
-In version 1.4 adds the ability to import data from an instrument that is not explicitly listed.
-
-I made minor tweaks to the "not_listed" instrument type so I could reprocess old data with old directory structures
-
-Removed the mpl_connect strategy for selecting the start and stop. New method implemented.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2025.10.20"
-__version__ = "3.0"
-__copyright__ = "Copyright 2025, Andy Schauer"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
 __license__ = "Apache 2.0"
 
 
@@ -34,12 +24,6 @@ import numpy as np
 import os
 from picarro_lib import *
 import time as t
-
-
-# -------------------- functions --------------------
-
-
-
 
 
 
@@ -268,11 +252,11 @@ def pick_start_stop(data_index, h2o, dD, *, overview_max_points=5000):
     y2 = np.asarray(dD)
 
     # START
-    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="CHOOSE START REGION")
+    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="DRAG TO CHOOSE START REGION")
     start_idx = _fine_pick(x, y1, y2, xmin, xmax, title="CHOOSE START POINT")
 
     # STOP
-    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="CHOOSE STOP REGION")
+    xmin, xmax = _coarse_window_two_axes(x, y1, y2, title="DRAG TO CHOOSE STOP REGION")
     stop_idx = _fine_pick(x, y1, y2, xmin, xmax, title="CHOOSE STOP POINT")
 
     if start_idx > stop_idx:

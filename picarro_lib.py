@@ -1,29 +1,12 @@
 #!/usr/bin/env python3
 """
 Library of functions used by the IsoLab picarro_* suite of python scripts.
-
-As of version 1.3 I am trying to investigate how the IsoLab delta value calculations are sensitive to
-H2O ppmv when they did not used to be, for phoenix at least. As such, I have added an 'i' to all variable
-names that are associated with IsoLab's delta calculations to indicate they are isolab's. A 'p' on the end
-of a delta or ratio indicates Picarro's calculation.
-
-Version 1.4 adds a picarro_path.txt to save me time in moving the picarro_lib.py file around and dealing
-with all the different directory structures on different computers.
-
-Version 1.5 adds the ability to import data from an instrument that is not explicitly listed.
-
-Version 1.6 changes min_H2O to 5000 from 10000
-
-Version 1.7 has inj_peak, inj_quality, and vial_quality removed. These have been replaced by dictionaries in
-picarro_inj.py and picarro_vial.py files. Moved calc_mode() from picarro_inj.py to here so it is available to
-picarro_vial.py.
 """
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2025.10.20"
-__version__ = "3.0"
-__copyright__ = "Copyright 2025, Andy Schauer"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
 __license__ = "Apache 2.0"
 
 

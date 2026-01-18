@@ -13,10 +13,10 @@ Ideally, Windows scheduler is used to run this script periodically
 """
 
 __author__ = "Andy Schauer"
-__copyright__ = "Copyright 2025, Andy Schauer"
-__license__ = "Apache 2.0"
-__version__ = "1.1"
 __email__ = "aschauer@uw.edu"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
+__license__ = "Apache 2.0"
 
 
 # ----- IMPORTS -----

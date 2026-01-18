@@ -4,29 +4,13 @@ This script reads in the hdf5 file created by picarro_h5.py if the data set excl
 This script will find each injection and reduce the h5 level data (~ 1 Hz data) to injection level summaries. A tray
 description file is required. This script effectively creates Picarro's Coordinator output, albeit in json format
 and with all of the data fields present that are in the original h5 files.
-
-Version 2.0 has a different strategy employed to find peaks. Previous versions found the tops of peaks using H2O, dH2O_dT, and dH2O_dT2.
-This version finds to troughs using the same three parameters. This came from an attempt to be able to account for failed injections and
-the desire to show the complete injection from start to finish. Furthermore, I have made an effort to have measured thresholds rather than
-static values set by me. They can still be changed to some custom value but the initial thresholds are measured. These are stored in the
-peak detection settings file and imported as pds.
-
-Version 2.1 has project and tray removed from tray description file
-
-Version 2.2 fixed a bokeh bug that snuck in regarding inability to serialize range.
-
-Version 2.3 found case where the peak detection settings (pds) were not beings used and they should have been
-
-Version 2.4 provisionally added peak['end_v2'] in an attempt to diversify finding the end of peaks, added comments and a new log file so that I know when
-      this end_v2 is used.
 """
 
 
 __author__ = "Andy Schauer"
 __email__ = "aschauer@uw.edu"
-__last_modified__ = "2025.10.20"
-__version__ = "3.0"
-__copyright__ = "Copyright 2025, Andy Schauer"
+__last_modified__ = "2026.01.18"
+__copyright__ = "Copyright 2026, Andy Schauer"
 __license__ = "Apache 2.0"
 
 
@@ -378,8 +362,7 @@ peak['top_start'] = peak['start'] + pds['trim_start']
 if 'end_v2' in peak:
     pds['trim_end'] = 10
     peak['top_end'] = peak['end_v2'] - pds['trim_end']
-
-elif pds['trim_start'] == 10:
+elif pds['trim_end'] == 10:
     pds['trim_end'] = int(len(meanH2Opeak) - meanH2Opeaktop[-2])                                                     # the "[-2]" is an effort to offset from the end of the measured top
     peak['top_end'] = peak['end'] - pds['trim_end']
 else:
@@ -673,7 +656,35 @@ else:
 
         <h2>{instrument['name']} {hdf5_file[0:-5]} High Resolution Data</h2>
         <div class="text-indent">
-        <p>High resolution data. Use this page to assess the quality of the high res data.</p>
+        <p>Use this page to assess the quality of the high res data.</p>
+        </div>
+        <h2>Data operations</h2>
+        <div class="text-indent">
+            Here are data processing choices - <em>how to change them</em> - <span class="script-font">scripts to run to implement your change</span>:
+            <ul>
+                <li><strong>Injection peak detection settings</strong> - <em>open {run_dir}/peak_detection_settings.json in a text editor and update as desired. NOTE - these values are either default or empirically derived from your data.</em> - <span class="script-font">picarro_inj.py</span>
+                    <ul>
+                        <li>Data points included in running average (kernel_size): {pds['kernel_size']}</li>
+                        <li>H2O derivative threshold (dH2O_dT2): {pds['dH2O_dT2']}</li>
+                        <li>Maximum H2O background (max_H2O_background): {pds['max_H2O_background']}</li>
+                        <li>H2O value to be lower than for peak trough (lower_H2O_mode): {pds['lower_H2O_mode']}</li>
+                        <li>H2O value to be higher than for peak (upper_H2O_mode): {pds['upper_H2O_mode']}</li>
+                        <li>Trim the detected peak by this many data points at the start (trim_start): {pds['trim_start']}</li>
+                        <li>Trim the detected peak by this many data points at the end (trim_end): {pds['trim_end']}</li>
+                        <li>Expected distance between peaks (trough_diff): {pds['trough_diff']}</li>
+                    </ul>
+                </li>
+                <li><strong>Injection quality control</strong> - <em>open {run_dir}/quality_control_parameters_inj.json in a text editor and update as desired. NOTE - these values are either default or empirically derived from your data.</em> - <span class="script-font">picarro_inj.py</span>
+                    <ul>
+                        <li>Maximum acceptable H2O standard deviation (max_H2O_std): {qcp['max_H2O_std']}</li>
+                        <li>Maximum acceptable d18O standard deviation (max_d18O_std): {qcp['max_d18O_std']}</li>
+                        <li>Maximum acceptable dD standard deviation (max_dD_std): {qcp['max_dD_std']}</li>
+                        <li>Maximum acceptable Cavity Pressure standard deviation (max_CAVITYPRESSURE_std): {qcp['max_CAVITYPRESSURE_std']}</li>
+                        <li>Minimum acceptable H2O ppm mean (min_H2O): {qcp['min_H2O']}</li>
+                    </ul>
+                </li>
+            </ul>
+        </div>
         <hr><p>'''
 
     flagged_block = str([f"<tr><td>{flagged_vial[i]}</td><td>{flagged_inj[i]}</td><td>{flagged_id1[i]}</td><td>{flagged_reason[i]}</td></tr>" for i, _ in enumerate(flagged_inj)]).replace("[", "").replace("'", "").replace("]", "").replace(", ", "")
